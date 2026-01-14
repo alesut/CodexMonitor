@@ -17,6 +17,11 @@ type GitDiffPanelProps = {
   logError?: string | null;
   logLoading?: boolean;
   logTotal?: number;
+  logAhead?: number;
+  logBehind?: number;
+  logAheadEntries?: GitLogEntry[];
+  logBehindEntries?: GitLogEntry[];
+  logUpstream?: string | null;
   gitRemoteUrl?: string | null;
   selectedPath?: string | null;
   onSelectFile?: (path: string) => void;
@@ -86,6 +91,8 @@ export function GitDiffPanel({
   mode,
   onModeChange,
   branchName,
+  totalAdditions,
+  totalDeletions,
   fileStatus,
   error,
   logError,
@@ -96,6 +103,11 @@ export function GitDiffPanel({
   onSelectFile,
   files,
   logEntries,
+  logAhead = 0,
+  logBehind = 0,
+  logAheadEntries = [],
+  logBehindEntries = [],
+  logUpstream = null,
 }: GitDiffPanelProps) {
   const githubBaseUrl = (() => {
     if (!gitRemoteUrl) {
@@ -149,6 +161,21 @@ export function GitDiffPanel({
     : logEntries.length
       ? `${logEntries.length} commit${logEntries.length === 1 ? "" : "s"}`
     : "No commits";
+  const logSyncLabel = logUpstream
+    ? `↑${logAhead} ↓${logBehind}`
+    : "No upstream configured";
+  const logUpstreamLabel = logUpstream ? `Upstream ${logUpstream}` : "";
+  const showAheadSection = logUpstream && logAhead > 0;
+  const showBehindSection = logUpstream && logBehind > 0;
+  const hasDiffTotals = totalAdditions > 0 || totalDeletions > 0;
+  const diffTotalsLabel = `+${totalAdditions} / -${totalDeletions}`;
+  const diffStatusLabel = hasDiffTotals
+    ? [logUpstream ? logSyncLabel : null, diffTotalsLabel]
+        .filter(Boolean)
+        .join(" · ")
+    : logUpstream
+      ? `${logSyncLabel} · ${fileStatus}`
+      : fileStatus;
   return (
     <aside className="diff-panel">
       <div className="git-panel-header">
@@ -177,9 +204,24 @@ export function GitDiffPanel({
           </button>
         </div>
       </div>
-      <div className="diff-status">
-        {mode === "diff" ? fileStatus : logCountLabel}
-      </div>
+      {mode === "diff" ? (
+        <>
+          <div className="diff-status">{diffStatusLabel}</div>
+        </>
+      ) : (
+        <>
+          <div className="diff-status">{logCountLabel}</div>
+          <div className="git-log-sync">
+            <span>{logSyncLabel}</span>
+            {logUpstreamLabel && (
+              <>
+                <span className="git-log-sep">·</span>
+                <span>{logUpstreamLabel}</span>
+              </>
+            )}
+          </div>
+        </>
+      )}
       <div className="diff-branch">{branchName || "unknown"}</div>
       {mode === "diff" ? (
         <div className="diff-list">
@@ -188,7 +230,7 @@ export function GitDiffPanel({
             <div className="diff-empty">No changes detected.</div>
           )}
           {files.map((file) => {
-            const { name } = splitPath(file.path);
+            const { name, dir } = splitPath(file.path);
             const { base, extension } = splitNameAndExtension(name);
             const isSelected = file.path === selectedPath;
             const statusSymbol = getStatusSymbol(file.status);
@@ -224,6 +266,7 @@ export function GitDiffPanel({
                       <span className="diff-del">-{file.deletions}</span>
                     </span>
                   </div>
+                  {dir && <div className="diff-dir">{dir}</div>}
                 </div>
               </div>
             );
@@ -235,29 +278,104 @@ export function GitDiffPanel({
           {!logError && logLoading && (
             <div className="diff-viewer-loading">Loading commits...</div>
           )}
-          {!logError && !logLoading && !logEntries.length && (
+          {!logError &&
+            !logLoading &&
+            !logEntries.length &&
+            !showAheadSection &&
+            !showBehindSection && (
             <div className="diff-empty">No commits yet.</div>
           )}
-          {logEntries.map((entry) => (
-            <div
-              key={entry.sha}
-              className="git-log-entry"
-              onContextMenu={(event) => showLogMenu(event, entry)}
-            >
-              <div className="git-log-summary">{entry.summary || "No message"}</div>
-              <div className="git-log-meta">
-                <span className="git-log-sha">{entry.sha.slice(0, 7)}</span>
-                <span className="git-log-sep">·</span>
-                <span className="git-log-author">
-                  {entry.author || "Unknown"}
-                </span>
-                <span className="git-log-sep">·</span>
-                <span className="git-log-date">
-                  {new Date(entry.timestamp * 1000).toLocaleDateString()}
-                </span>
+          {showAheadSection && (
+            <div className="git-log-section">
+              <div className="git-log-section-title">To push</div>
+              <div className="git-log-section-list">
+                {logAheadEntries.map((entry) => (
+                  <div
+                    key={entry.sha}
+                    className="git-log-entry git-log-entry-compact"
+                    onContextMenu={(event) => showLogMenu(event, entry)}
+                  >
+                    <div className="git-log-summary">
+                      {entry.summary || "No message"}
+                    </div>
+                    <div className="git-log-meta">
+                      <span className="git-log-sha">
+                        {entry.sha.slice(0, 7)}
+                      </span>
+                      <span className="git-log-sep">·</span>
+                      <span className="git-log-author">
+                        {entry.author || "Unknown"}
+                      </span>
+                      <span className="git-log-sep">·</span>
+                      <span className="git-log-date">
+                        {new Date(entry.timestamp * 1000).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
+          )}
+          {showBehindSection && (
+            <div className="git-log-section">
+              <div className="git-log-section-title">To pull</div>
+              <div className="git-log-section-list">
+                {logBehindEntries.map((entry) => (
+                  <div
+                    key={entry.sha}
+                    className="git-log-entry git-log-entry-compact"
+                    onContextMenu={(event) => showLogMenu(event, entry)}
+                  >
+                    <div className="git-log-summary">
+                      {entry.summary || "No message"}
+                    </div>
+                    <div className="git-log-meta">
+                      <span className="git-log-sha">
+                        {entry.sha.slice(0, 7)}
+                      </span>
+                      <span className="git-log-sep">·</span>
+                      <span className="git-log-author">
+                        {entry.author || "Unknown"}
+                      </span>
+                      <span className="git-log-sep">·</span>
+                      <span className="git-log-date">
+                        {new Date(entry.timestamp * 1000).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {(logEntries.length > 0 || logLoading) && (
+            <div className="git-log-section">
+              <div className="git-log-section-title">Recent commits</div>
+              <div className="git-log-section-list">
+                {logEntries.map((entry) => (
+                  <div
+                    key={entry.sha}
+                    className="git-log-entry"
+                    onContextMenu={(event) => showLogMenu(event, entry)}
+                  >
+                    <div className="git-log-summary">
+                      {entry.summary || "No message"}
+                    </div>
+                    <div className="git-log-meta">
+                      <span className="git-log-sha">{entry.sha.slice(0, 7)}</span>
+                      <span className="git-log-sep">·</span>
+                      <span className="git-log-author">
+                        {entry.author || "Unknown"}
+                      </span>
+                      <span className="git-log-sep">·</span>
+                      <span className="git-log-date">
+                        {new Date(entry.timestamp * 1000).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </aside>

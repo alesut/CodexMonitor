@@ -103,6 +103,11 @@ export type GitLogEntry = {
 export type GitLogResponse = {
   total: number;
   entries: GitLogEntry[];
+  ahead: number;
+  behind: number;
+  aheadEntries: GitLogEntry[];
+  behindEntries: GitLogEntry[];
+  upstream: string | null;
 };
 
 export type TokenUsageBreakdown = {

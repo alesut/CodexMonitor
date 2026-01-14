@@ -158,6 +158,7 @@ function MainApp() {
   const compactTab = isTablet ? tabletTab : activeTab;
   const shouldLoadDiffs =
     centerMode === "diff" || (isCompact && compactTab === "git");
+  const shouldLoadGitLog = Boolean(activeWorkspace);
   const {
     diffs: gitDiffs,
     isLoading: isDiffLoading,
@@ -166,9 +167,14 @@ function MainApp() {
   const {
     entries: gitLogEntries,
     total: gitLogTotal,
+    ahead: gitLogAhead,
+    behind: gitLogBehind,
+    aheadEntries: gitLogAheadEntries,
+    behindEntries: gitLogBehindEntries,
+    upstream: gitLogUpstream,
     isLoading: gitLogLoading,
     error: gitLogError,
-  } = useGitLog(activeWorkspace, gitPanelMode === "log");
+  } = useGitLog(activeWorkspace, shouldLoadGitLog);
   const { remote: gitRemoteUrl } = useGitRemote(activeWorkspace);
   const {
     models,
@@ -756,6 +762,11 @@ function MainApp() {
                   onSelectFile={handleSelectDiff}
                   logEntries={gitLogEntries}
                   logTotal={gitLogTotal}
+                  logAhead={gitLogAhead}
+                  logBehind={gitLogBehind}
+                  logAheadEntries={gitLogAheadEntries}
+                  logBehindEntries={gitLogBehindEntries}
+                  logUpstream={gitLogUpstream}
                   gitRemoteUrl={gitRemoteUrl}
                 />
               </div>
@@ -858,6 +869,11 @@ function MainApp() {
                   onSelectFile={handleSelectDiff}
                   logEntries={gitLogEntries}
                   logTotal={gitLogTotal}
+                  logAhead={gitLogAhead}
+                  logBehind={gitLogBehind}
+                  logAheadEntries={gitLogAheadEntries}
+                  logBehindEntries={gitLogBehindEntries}
+                  logUpstream={gitLogUpstream}
                   gitRemoteUrl={gitRemoteUrl}
                 />
                 <div className="tablet-git-viewer">
@@ -1004,6 +1020,11 @@ function MainApp() {
                     onSelectFile={handleSelectDiff}
                     logEntries={gitLogEntries}
                     logTotal={gitLogTotal}
+                    logAhead={gitLogAhead}
+                    logBehind={gitLogBehind}
+                    logAheadEntries={gitLogAheadEntries}
+                    logBehindEntries={gitLogBehindEntries}
+                    logUpstream={gitLogUpstream}
                     gitRemoteUrl={gitRemoteUrl}
                   />
                 </div>

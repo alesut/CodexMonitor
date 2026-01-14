@@ -111,15 +111,17 @@
   padding: 4px 6px;
   border-radius: 8px;
   cursor: pointer;
+  border: 1px solid transparent;
 }
 
 .diff-row:hover {
   background: var(--surface-hover);
+  border-color: var(--border-subtle);
 }
 
 .diff-row.active {
   background: var(--surface-active);
-  box-shadow: inset 0 0 0 1px var(--border-accent-soft);
+  border-color: var(--border-accent-soft);
 }
 
 .diff-icon {
@@ -205,6 +207,14 @@
   gap: 2px;
 }
 
+.diff-dir {
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .diff-add {
   color: #47d488;
 }
@@ -220,11 +230,38 @@
 .git-log-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   overflow-y: auto;
   flex: 1;
   padding-right: 2px;
   min-height: 0;
+}
+
+.git-log-sync {
+  font-size: 11px;
+  color: var(--text-faint);
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.git-log-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.git-log-section-title {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.git-log-section-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .git-log-entry {
@@ -234,6 +271,10 @@
   padding: 6px 0;
   border-bottom: 1px solid var(--border-subtle);
   cursor: context-menu;
+}
+
+.git-log-entry-compact {
+  padding: 4px 0;
 }
 
 .git-log-entry:last-child {
