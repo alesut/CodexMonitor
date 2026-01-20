@@ -1,5 +1,7 @@
 use tauri::menu::{Menu, MenuItemBuilder, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use serde::Serialize;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 mod backend;
 mod codex;
@@ -224,19 +226,19 @@ pub fn run() {
                     let _ = app.emit("updater-check", ());
                 }
                 "file_new_agent" => {
-                    let _ = app.emit("menu-new-agent", ());
+                    emit_menu_event(app, "menu-new-agent");
                 }
                 "file_new_worktree_agent" => {
-                    let _ = app.emit("menu-new-worktree-agent", ());
+                    emit_menu_event(app, "menu-new-worktree-agent");
                 }
                 "file_new_clone_agent" => {
-                    let _ = app.emit("menu-new-clone-agent", ());
+                    emit_menu_event(app, "menu-new-clone-agent");
                 }
                 "file_add_workspace" => {
-                    let _ = app.emit("menu-add-workspace", ());
+                    emit_menu_event(app, "menu-add-workspace");
                 }
                 "file_open_settings" => {
-                    let _ = app.emit("menu-open-settings", ());
+                    emit_menu_event(app, "menu-open-settings");
                 }
                 "file_close_window" | "window_close" => {
                     if let Some(window) = app.get_webview_window("main") {
@@ -343,4 +345,21 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+#[derive(Clone, Serialize)]
+struct MenuEventPayload {
+    id: u64,
+}
+
+static MENU_EVENT_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+fn emit_menu_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, event: &str) {
+    let payload = MenuEventPayload {
+        id: MENU_EVENT_COUNTER.fetch_add(1, Ordering::Relaxed),
+    };
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.emit(event, payload);
+    } else {
+        let _ = app.emit(event, payload);
+    }
 }

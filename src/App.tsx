@@ -85,6 +85,7 @@ import { useUiScaleShortcuts } from "./features/layout/hooks/useUiScaleShortcuts
 import { useWorkspaceSelection } from "./features/workspaces/hooks/useWorkspaceSelection";
 import { useLocalUsage } from "./features/home/hooks/useLocalUsage";
 import { useNewAgentShortcut } from "./features/app/hooks/useNewAgentShortcut";
+import { useTauriEvent } from "./features/app/hooks/useTauriEvent";
 import { useAgentSoundNotifications } from "./features/notifications/hooks/useAgentSoundNotifications";
 import { useWindowFocusState } from "./features/layout/hooks/useWindowFocusState";
 import { useCopyThread } from "./features/threads/hooks/useCopyThread";
@@ -101,6 +102,7 @@ import {
   subscribeMenuNewWorktreeAgent,
   subscribeMenuOpenSettings,
   subscribeUpdaterCheck,
+  type MenuEventPayload,
 } from "./services/events";
 import type {
   AccessMode,
@@ -283,31 +285,25 @@ function MainApp() {
   } = useUpdater({ onDebug: addDebugEntry });
   const isWindowFocused = useWindowFocusState();
   const nextTestSoundIsError = useRef(false);
+  const subscribeUpdaterCheckEvent = useCallback(
+    (handler: () => void) =>
+      subscribeUpdaterCheck(handler, {
+        onError: (error) => {
+          addDebugEntry({
+            id: `${Date.now()}-client-updater-menu-error`,
+            timestamp: Date.now(),
+            source: "error",
+            label: "updater/menu-error",
+            payload: error instanceof Error ? error.message : String(error),
+          });
+        },
+      }),
+    [addDebugEntry],
+  );
 
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    subscribeUpdaterCheck(() => {
-      void checkForUpdates({ announceNoUpdate: true });
-    })
-      .then((handler) => {
-        unlisten = handler;
-      })
-      .catch((error) => {
-        addDebugEntry({
-          id: `${Date.now()}-client-updater-menu-error`,
-          timestamp: Date.now(),
-          source: "error",
-          label: "updater/menu-error",
-          payload: error instanceof Error ? error.message : String(error),
-        });
-      });
-
-    return () => {
-      if (unlisten) {
-        unlisten();
-      }
-    };
-  }, [addDebugEntry, checkForUpdates]);
+  useTauriEvent(subscribeUpdaterCheckEvent, () => {
+    void checkForUpdates({ announceNoUpdate: true });
+  });
 
   useAgentSoundNotifications({
     enabled: appSettings.notificationSoundsEnabled,
@@ -365,9 +361,14 @@ function MainApp() {
     useGitStatus(activeWorkspace);
   const gitStatusRefreshTimeoutRef = useRef<number | null>(null);
   const activeWorkspaceIdRef = useRef<string | null>(activeWorkspace?.id ?? null);
+  const activeWorkspaceRef = useRef(activeWorkspace);
+  const lastMenuEventIdRef = useRef<number | null>(null);
   useEffect(() => {
     activeWorkspaceIdRef.current = activeWorkspace?.id ?? null;
   }, [activeWorkspace?.id]);
+  useEffect(() => {
+    activeWorkspaceRef.current = activeWorkspace;
+  }, [activeWorkspace]);
   useEffect(() => {
     return () => {
       if (gitStatusRefreshTimeoutRef.current !== null) {
@@ -1014,6 +1015,11 @@ function MainApp() {
   const worktreeLabel = isWorktreeWorkspace
     ? activeWorkspace?.worktree?.branch ?? activeWorkspace?.name ?? null
     : null;
+  const baseWorkspaceRef = useRef(activeParentWorkspace ?? activeWorkspace);
+
+  useEffect(() => {
+    baseWorkspaceRef.current = activeParentWorkspace ?? activeWorkspace;
+  }, [activeParentWorkspace, activeWorkspace]);
 
   useEffect(() => {
     if (!isPhone) {
@@ -1207,86 +1213,57 @@ function MainApp() {
     [],
   );
 
-  useEffect(() => {
-    let unlistenNewAgent: (() => void) | null = null;
-    let unlistenNewWorktree: (() => void) | null = null;
-    let unlistenNewClone: (() => void) | null = null;
-    let unlistenAddWorkspace: (() => void) | null = null;
-    let unlistenOpenSettings: (() => void) | null = null;
-    const baseWorkspace = activeParentWorkspace ?? activeWorkspace;
+  const shouldHandleMenuEvent = useCallback((payload: MenuEventPayload) => {
+    if (lastMenuEventIdRef.current === payload.id) {
+      return false;
+    }
+    lastMenuEventIdRef.current = payload.id;
+    return true;
+  }, []);
 
-    subscribeMenuNewAgent(() => {
-      if (activeWorkspace) {
-        void handleAddAgent(activeWorkspace);
-      }
-    })
-      .then((handler) => {
-        unlistenNewAgent = handler;
-      })
-      .catch(() => {});
+  useTauriEvent(subscribeMenuNewAgent, (payload: MenuEventPayload) => {
+    if (!shouldHandleMenuEvent(payload)) {
+      return;
+    }
+    const workspace = activeWorkspaceRef.current;
+    if (workspace) {
+      void handleAddAgent(workspace);
+    }
+  });
 
-    subscribeMenuNewWorktreeAgent(() => {
-      if (baseWorkspace) {
-        void handleAddWorktreeAgent(baseWorkspace);
-      }
-    })
-      .then((handler) => {
-        unlistenNewWorktree = handler;
-      })
-      .catch(() => {});
+  useTauriEvent(subscribeMenuNewWorktreeAgent, (payload: MenuEventPayload) => {
+    if (!shouldHandleMenuEvent(payload)) {
+      return;
+    }
+    const workspace = baseWorkspaceRef.current;
+    if (workspace) {
+      void handleAddWorktreeAgent(workspace);
+    }
+  });
 
-    subscribeMenuNewCloneAgent(() => {
-      if (baseWorkspace) {
-        void handleAddCloneAgent(baseWorkspace);
-      }
-    })
-      .then((handler) => {
-        unlistenNewClone = handler;
-      })
-      .catch(() => {});
+  useTauriEvent(subscribeMenuNewCloneAgent, (payload: MenuEventPayload) => {
+    if (!shouldHandleMenuEvent(payload)) {
+      return;
+    }
+    const workspace = baseWorkspaceRef.current;
+    if (workspace) {
+      void handleAddCloneAgent(workspace);
+    }
+  });
 
-    subscribeMenuAddWorkspace(() => {
-      void handleAddWorkspace();
-    })
-      .then((handler) => {
-        unlistenAddWorkspace = handler;
-      })
-      .catch(() => {});
+  useTauriEvent(subscribeMenuAddWorkspace, (payload: MenuEventPayload) => {
+    if (!shouldHandleMenuEvent(payload)) {
+      return;
+    }
+    void handleAddWorkspace();
+  });
 
-    subscribeMenuOpenSettings(() => {
-      handleOpenSettings();
-    })
-      .then((handler) => {
-        unlistenOpenSettings = handler;
-      })
-      .catch(() => {});
-
-    return () => {
-      if (unlistenNewAgent) {
-        unlistenNewAgent();
-      }
-      if (unlistenNewWorktree) {
-        unlistenNewWorktree();
-      }
-      if (unlistenNewClone) {
-        unlistenNewClone();
-      }
-      if (unlistenAddWorkspace) {
-        unlistenAddWorkspace();
-      }
-      if (unlistenOpenSettings) {
-        unlistenOpenSettings();
-      }
-    };
-  }, [
-    activeParentWorkspace,
-    activeWorkspace,
-    handleAddAgent,
-    handleAddCloneAgent,
-    handleAddWorkspace,
-    handleAddWorktreeAgent,
-    handleOpenSettings,
-  ]);
+  useTauriEvent(subscribeMenuOpenSettings, (payload: MenuEventPayload) => {
+    if (!shouldHandleMenuEvent(payload)) {
+      return;
+    }
+    handleOpenSettings();
+  });
 
   const orderValue = (entry: WorkspaceInfo) =>
     typeof entry.settings.sortOrder === "number"
