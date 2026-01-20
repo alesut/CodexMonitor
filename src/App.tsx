@@ -41,6 +41,7 @@ import { useWindowDrag } from "./features/layout/hooks/useWindowDrag";
 import { useGitStatus } from "./features/git/hooks/useGitStatus";
 import { useGitDiffs } from "./features/git/hooks/useGitDiffs";
 import { useGitLog } from "./features/git/hooks/useGitLog";
+import { useGitCommitDiffs } from "./features/git/hooks/useGitCommitDiffs";
 import { useGitHubIssues } from "./features/git/hooks/useGitHubIssues";
 import { useGitHubPullRequests } from "./features/git/hooks/useGitHubPullRequests";
 import { useGitHubPullRequestDiffs } from "./features/git/hooks/useGitHubPullRequestDiffs";
@@ -194,7 +195,8 @@ function MainApp() {
   >("git");
   const [selectedPullRequest, setSelectedPullRequest] =
     useState<GitHubPullRequest | null>(null);
-  const [diffSource, setDiffSource] = useState<"local" | "pr">("local");
+  const [selectedCommitSha, setSelectedCommitSha] = useState<string | null>(null);
+  const [diffSource, setDiffSource] = useState<"local" | "pr" | "commit">("local");
   const [accessMode, setAccessMode] = useState<AccessMode>("current");
   const [activeTab, setActiveTab] = useState<
     "projects" | "codex" | "git" | "log"
@@ -421,6 +423,15 @@ function MainApp() {
     refresh: refreshGitLog,
   } = useGitLog(activeWorkspace, shouldLoadGitLog);
   const {
+    diffs: gitCommitDiffs,
+    isLoading: gitCommitDiffsLoading,
+    error: gitCommitDiffsError,
+  } = useGitCommitDiffs(
+    activeWorkspace,
+    selectedCommitSha,
+    shouldLoadDiffs && diffSource === "commit"
+  );
+  const {
     issues: gitIssues,
     total: gitIssuesTotal,
     isLoading: gitIssuesLoading,
@@ -598,11 +609,24 @@ function MainApp() {
           } changed`
         : "Working tree clean";
 
-  const activeDiffs = diffSource === "pr" ? gitPullRequestDiffs : gitDiffs;
+  const activeDiffs =
+    diffSource === "pr"
+      ? gitPullRequestDiffs
+      : diffSource === "commit"
+        ? gitCommitDiffs
+        : gitDiffs;
   const activeDiffLoading =
-    diffSource === "pr" ? gitPullRequestDiffsLoading : isDiffLoading;
+    diffSource === "pr"
+      ? gitPullRequestDiffsLoading
+      : diffSource === "commit"
+        ? gitCommitDiffsLoading
+        : isDiffLoading;
   const activeDiffError =
-    diffSource === "pr" ? gitPullRequestDiffsError : diffError;
+    diffSource === "pr"
+      ? gitPullRequestDiffsError
+      : diffSource === "commit"
+        ? gitCommitDiffsError
+        : diffError;
 
   useEffect(() => {
     if (appSettingsLoading) {
@@ -649,6 +673,22 @@ function MainApp() {
     }
     setSelectedDiffPath(gitPullRequestDiffs[0].path);
   }, [centerMode, diffSource, gitPullRequestDiffs, selectedDiffPath]);
+
+  useEffect(() => {
+    if (diffSource !== "commit" || centerMode !== "diff") {
+      return;
+    }
+    if (!gitCommitDiffs.length) {
+      return;
+    }
+    if (
+      selectedDiffPath &&
+      gitCommitDiffs.some((entry) => entry.path === selectedDiffPath)
+    ) {
+      return;
+    }
+    setSelectedDiffPath(gitCommitDiffs[0].path);
+  }, [centerMode, diffSource, gitCommitDiffs, selectedDiffPath]);
 
   const {
     setActiveThreadId,
@@ -1316,6 +1356,20 @@ function MainApp() {
     setCenterMode("diff");
     setGitPanelMode("diff");
     setDiffSource("local");
+    setSelectedCommitSha(null);
+    setSelectedPullRequest(null);
+    if (isCompact) {
+      setActiveTab("git");
+    }
+  }
+
+  function handleSelectCommit(sha: string) {
+    setSelectedCommitSha(sha);
+    setSelectedDiffPath(null);
+    pendingDiffScrollRef.current = true;
+    setCenterMode("diff");
+    setGitPanelMode("log");
+    setDiffSource("commit");
     setSelectedPullRequest(null);
     if (isCompact) {
       setActiveTab("git");
@@ -1388,6 +1442,13 @@ function MainApp() {
       }
       setDiffSource("local");
       setSelectedPullRequest(null);
+    }
+    if (mode !== "log") {
+      if (diffSource === "commit") {
+        setSelectedDiffPath(null);
+        setDiffSource("local");
+      }
+      setSelectedCommitSha(null);
     }
   }
 
@@ -1699,6 +1760,7 @@ function MainApp() {
     gitLogUpstream,
     gitLogError,
     gitLogLoading,
+    selectedCommitSha,
     gitIssues,
     gitIssuesTotal,
     gitIssuesLoading,
@@ -1712,7 +1774,13 @@ function MainApp() {
     selectedPullRequestComments: diffSource === "pr" ? gitPullRequestComments : [],
     selectedPullRequestCommentsLoading: gitPullRequestCommentsLoading,
     selectedPullRequestCommentsError: gitPullRequestCommentsError,
-    onSelectPullRequest: handleSelectPullRequest,
+    onSelectPullRequest: (pullRequest) => {
+      setSelectedCommitSha(null);
+      handleSelectPullRequest(pullRequest);
+    },
+    onSelectCommit: (entry) => {
+      handleSelectCommit(entry.sha);
+    },
     gitRemoteUrl,
     gitRoot: activeGitRoot,
     gitRootCandidates,

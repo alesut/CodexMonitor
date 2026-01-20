@@ -177,6 +177,8 @@ type LayoutNodesOptions = {
   gitLogAheadEntries: GitLogEntry[];
   gitLogBehindEntries: GitLogEntry[];
   gitLogUpstream: string | null;
+  selectedCommitSha: string | null;
+  onSelectCommit: (entry: GitLogEntry) => void;
   gitLogError: string | null;
   gitLogLoading: boolean;
   gitIssues: GitHubIssue[];
@@ -588,6 +590,8 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
         logAheadEntries={options.gitLogAheadEntries}
         logBehindEntries={options.gitLogBehindEntries}
         logUpstream={options.gitLogUpstream}
+        selectedCommitSha={options.selectedCommitSha}
+        onSelectCommit={options.onSelectCommit}
         issues={options.gitIssues}
         issuesTotal={options.gitIssuesTotal}
         issuesLoading={options.gitIssuesLoading}

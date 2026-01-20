@@ -83,6 +83,8 @@ type GitDiffPanelProps = {
   onUnstageFile?: (path: string) => Promise<void> | void;
   onRevertFile?: (path: string) => Promise<void> | void;
   logEntries: GitLogEntry[];
+  selectedCommitSha?: string | null;
+  onSelectCommit?: (entry: GitLogEntry) => void;
   commitMessage?: string;
   commitMessageLoading?: boolean;
   commitMessageError?: string | null;
@@ -271,6 +273,8 @@ export function GitDiffPanel({
   logAheadEntries = [],
   logBehindEntries = [],
   logUpstream = null,
+  selectedCommitSha = null,
+  onSelectCommit,
   issues = [],
   issuesTotal = 0,
   issuesLoading = false,
@@ -1072,30 +1076,42 @@ export function GitDiffPanel({
             <div className="git-log-section">
               <div className="git-log-section-title">To push</div>
               <div className="git-log-section-list">
-                {logAheadEntries.map((entry) => (
-                  <div
-                    key={entry.sha}
-                    className="git-log-entry git-log-entry-compact"
-                    onContextMenu={(event) => showLogMenu(event, entry)}
-                  >
-                    <div className="git-log-summary">
-                      {entry.summary || "No message"}
+                {logAheadEntries.map((entry) => {
+                  const isSelected = selectedCommitSha === entry.sha;
+                  return (
+                    <div
+                      key={entry.sha}
+                      className={`git-log-entry git-log-entry-compact ${isSelected ? "active" : ""}`}
+                      onClick={() => onSelectCommit?.(entry)}
+                      onContextMenu={(event) => showLogMenu(event, entry)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelectCommit?.(entry);
+                        }
+                      }}
+                    >
+                      <div className="git-log-summary">
+                        {entry.summary || "No message"}
+                      </div>
+                      <div className="git-log-meta">
+                        <span className="git-log-sha">
+                          {entry.sha.slice(0, 7)}
+                        </span>
+                        <span className="git-log-sep">·</span>
+                        <span className="git-log-author">
+                          {entry.author || "Unknown"}
+                        </span>
+                        <span className="git-log-sep">·</span>
+                        <span className="git-log-date">
+                          {formatRelativeTime(entry.timestamp * 1000)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="git-log-meta">
-                      <span className="git-log-sha">
-                        {entry.sha.slice(0, 7)}
-                      </span>
-                      <span className="git-log-sep">·</span>
-                      <span className="git-log-author">
-                        {entry.author || "Unknown"}
-                      </span>
-                      <span className="git-log-sep">·</span>
-                      <span className="git-log-date">
-                        {formatRelativeTime(entry.timestamp * 1000)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1103,30 +1119,42 @@ export function GitDiffPanel({
             <div className="git-log-section">
               <div className="git-log-section-title">To pull</div>
               <div className="git-log-section-list">
-                {logBehindEntries.map((entry) => (
-                  <div
-                    key={entry.sha}
-                    className="git-log-entry git-log-entry-compact"
-                    onContextMenu={(event) => showLogMenu(event, entry)}
-                  >
-                    <div className="git-log-summary">
-                      {entry.summary || "No message"}
+                {logBehindEntries.map((entry) => {
+                  const isSelected = selectedCommitSha === entry.sha;
+                  return (
+                    <div
+                      key={entry.sha}
+                      className={`git-log-entry git-log-entry-compact ${isSelected ? "active" : ""}`}
+                      onClick={() => onSelectCommit?.(entry)}
+                      onContextMenu={(event) => showLogMenu(event, entry)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelectCommit?.(entry);
+                        }
+                      }}
+                    >
+                      <div className="git-log-summary">
+                        {entry.summary || "No message"}
+                      </div>
+                      <div className="git-log-meta">
+                        <span className="git-log-sha">
+                          {entry.sha.slice(0, 7)}
+                        </span>
+                        <span className="git-log-sep">·</span>
+                        <span className="git-log-author">
+                          {entry.author || "Unknown"}
+                        </span>
+                        <span className="git-log-sep">·</span>
+                        <span className="git-log-date">
+                          {formatRelativeTime(entry.timestamp * 1000)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="git-log-meta">
-                      <span className="git-log-sha">
-                        {entry.sha.slice(0, 7)}
-                      </span>
-                      <span className="git-log-sep">·</span>
-                      <span className="git-log-author">
-                        {entry.author || "Unknown"}
-                      </span>
-                      <span className="git-log-sep">·</span>
-                      <span className="git-log-date">
-                        {formatRelativeTime(entry.timestamp * 1000)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1134,28 +1162,40 @@ export function GitDiffPanel({
             <div className="git-log-section">
               <div className="git-log-section-title">Recent commits</div>
               <div className="git-log-section-list">
-                {logEntries.map((entry) => (
-                  <div
-                    key={entry.sha}
-                    className="git-log-entry"
-                    onContextMenu={(event) => showLogMenu(event, entry)}
-                  >
-                    <div className="git-log-summary">
-                      {entry.summary || "No message"}
+                {logEntries.map((entry) => {
+                  const isSelected = selectedCommitSha === entry.sha;
+                  return (
+                    <div
+                      key={entry.sha}
+                      className={`git-log-entry ${isSelected ? "active" : ""}`}
+                      onClick={() => onSelectCommit?.(entry)}
+                      onContextMenu={(event) => showLogMenu(event, entry)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelectCommit?.(entry);
+                        }
+                      }}
+                    >
+                      <div className="git-log-summary">
+                        {entry.summary || "No message"}
+                      </div>
+                      <div className="git-log-meta">
+                        <span className="git-log-sha">{entry.sha.slice(0, 7)}</span>
+                        <span className="git-log-sep">·</span>
+                        <span className="git-log-author">
+                          {entry.author || "Unknown"}
+                        </span>
+                        <span className="git-log-sep">·</span>
+                        <span className="git-log-date">
+                          {formatRelativeTime(entry.timestamp * 1000)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="git-log-meta">
-                      <span className="git-log-sha">{entry.sha.slice(0, 7)}</span>
-                      <span className="git-log-sep">·</span>
-                      <span className="git-log-author">
-                        {entry.author || "Unknown"}
-                      </span>
-                      <span className="git-log-sep">·</span>
-                      <span className="git-log-date">
-                        {formatRelativeTime(entry.timestamp * 1000)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
