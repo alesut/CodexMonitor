@@ -365,6 +365,7 @@ function MainApp() {
     removeWorktree,
     renameWorktree,
     renameWorktreeUpstream,
+    deletingWorktreeIds,
     hasLoaded,
     refreshWorkspaces
   } = useWorkspaces({
@@ -1838,6 +1839,7 @@ function MainApp() {
     workspaces,
     groupedWorkspaces,
     hasWorkspaceGroups: workspaceGroups.length > 0,
+    deletingWorktreeIds,
     threadsByWorkspace,
     threadParentById,
     threadStatusById,

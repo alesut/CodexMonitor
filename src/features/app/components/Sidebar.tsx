@@ -31,6 +31,7 @@ type SidebarProps = {
   workspaces: WorkspaceInfo[];
   groupedWorkspaces: WorkspaceGroupSection[];
   hasWorkspaceGroups: boolean;
+  deletingWorktreeIds: Set<string>;
   threadsByWorkspace: Record<string, ThreadSummary[]>;
   threadParentById: Record<string, string>;
   threadStatusById: Record<
@@ -72,6 +73,7 @@ export function Sidebar({
   workspaces,
   groupedWorkspaces,
   hasWorkspaceGroups,
+  deletingWorktreeIds,
   threadsByWorkspace,
   threadParentById,
   threadStatusById,
@@ -392,6 +394,7 @@ export function Sidebar({
                       {!isCollapsed && worktrees.length > 0 && (
                         <WorktreeSection
                           worktrees={worktrees}
+                          deletingWorktreeIds={deletingWorktreeIds}
                           threadsByWorkspace={threadsByWorkspace}
                           threadStatusById={threadStatusById}
                           threadListLoadingByWorkspace={threadListLoadingByWorkspace}
