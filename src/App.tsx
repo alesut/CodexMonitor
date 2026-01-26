@@ -370,14 +370,31 @@ function MainApp() {
     preferredEffort: appSettings.lastComposerReasoningEffort,
   });
 
+  const {
+    collaborationModes,
+    selectedCollaborationMode,
+    selectedCollaborationModeId,
+    setSelectedCollaborationModeId,
+  } = useCollaborationModes({
+    activeWorkspace,
+    enabled: appSettings.experimentalCollaborationModesEnabled,
+    onDebug: addDebugEntry,
+  });
+
   useComposerShortcuts({
     textareaRef: composerInputRef,
     modelShortcut: appSettings.composerModelShortcut,
     accessShortcut: appSettings.composerAccessShortcut,
     reasoningShortcut: appSettings.composerReasoningShortcut,
+    collaborationShortcut: appSettings.experimentalCollaborationModesEnabled
+      ? appSettings.composerCollaborationShortcut
+      : null,
     models,
+    collaborationModes,
     selectedModelId,
     onSelectModel: setSelectedModelId,
+    selectedCollaborationModeId,
+    onSelectCollaborationMode: setSelectedCollaborationModeId,
     accessMode,
     onSelectAccessMode: setAccessMode,
     reasoningOptions,
@@ -389,23 +406,15 @@ function MainApp() {
     models,
     selectedModelId,
     onSelectModel: setSelectedModelId,
+    collaborationModes,
+    selectedCollaborationModeId,
+    onSelectCollaborationMode: setSelectedCollaborationModeId,
     accessMode,
     onSelectAccessMode: setAccessMode,
     reasoningOptions,
     selectedEffort,
     onSelectEffort: setSelectedEffort,
     onFocusComposer: () => composerInputRef.current?.focus(),
-  });
-
-  const {
-    collaborationModes,
-    selectedCollaborationMode,
-    selectedCollaborationModeId,
-    setSelectedCollaborationModeId,
-  } = useCollaborationModes({
-    activeWorkspace,
-    enabled: appSettings.experimentalCollaborationModesEnabled,
-    onDebug: addDebugEntry,
   });
   const { skills } = useSkills({ activeWorkspace, onDebug: addDebugEntry });
   const {
