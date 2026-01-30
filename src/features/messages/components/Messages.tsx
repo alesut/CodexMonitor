@@ -73,6 +73,7 @@ type MessageRowProps = {
 
 type ReasoningRowProps = {
   item: Extract<ConversationItem, { kind: "reasoning" }>;
+  parsed: ReturnType<typeof parseReasoning>;
   isExpanded: boolean;
   onToggle: (id: string) => void;
   onOpenFileLink?: (path: string) => void;
@@ -123,6 +124,9 @@ type ToolGroup = {
 type MessageListEntry =
   | { kind: "item"; item: ConversationItem }
   | { kind: "toolGroup"; group: ToolGroup };
+
+const SCROLL_THRESHOLD_PX = 120;
+const MAX_COMMAND_OUTPUT_LINES = 200;
 
 function basename(path: string) {
   if (!path) {
@@ -223,23 +227,6 @@ function parseReasoning(item: Extract<ConversationItem, { kind: "reasoning" }>) 
     hasBody,
     workingLabel,
   };
-}
-
-function reasoningWorkingLabel(items: ConversationItem[]) {
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index];
-    if (item.kind === "message") {
-      break;
-    }
-    if (item.kind !== "reasoning") {
-      continue;
-    }
-    const parsed = parseReasoning(item);
-    if (parsed.workingLabel) {
-      return parsed.workingLabel;
-    }
-  }
-  return null;
 }
 
 function normalizeMessageImageSrc(path: string) {
@@ -743,12 +730,13 @@ const MessageRow = memo(function MessageRow({
 
 const ReasoningRow = memo(function ReasoningRow({
   item,
+  parsed,
   isExpanded,
   onToggle,
   onOpenFileLink,
   onOpenFileLinkMenu,
 }: ReasoningRowProps) {
-  const { summaryTitle, bodyText, hasBody } = parseReasoning(item);
+  const { summaryTitle, bodyText, hasBody } = parsed;
   const reasoningTone: StatusTone = hasBody ? "completed" : "processing";
   return (
     <div className="tool-inline reasoning-inline">
@@ -1004,12 +992,11 @@ const CommandOutput = memo(function CommandOutput({ output }: CommandOutputProps
     }
     return output.split(/\r?\n/);
   }, [output]);
-  const maxStoredLines = 200;
   const lineWindow = useMemo(() => {
-    if (lines.length <= maxStoredLines) {
+    if (lines.length <= MAX_COMMAND_OUTPUT_LINES) {
       return { offset: 0, lines };
     }
-    const startIndex = lines.length - maxStoredLines;
+    const startIndex = lines.length - MAX_COMMAND_OUTPUT_LINES;
     return { offset: startIndex, lines: lines.slice(startIndex) };
   }, [lines]);
 
@@ -1105,7 +1092,6 @@ export const Messages = memo(function Messages({
   userInputRequests = [],
   onUserInputSubmit,
 }: MessagesProps) {
-  const SCROLL_THRESHOLD_PX = 120;
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const autoScrollRef = useRef(true);
@@ -1133,7 +1119,7 @@ export const Messages = memo(function Messages({
   const isNearBottom = useCallback(
     (node: HTMLDivElement) =>
       node.scrollHeight - node.scrollTop - node.clientHeight <= SCROLL_THRESHOLD_PX,
-    [SCROLL_THRESHOLD_PX],
+    [],
   );
 
   const updateAutoScroll = () => {
@@ -1183,7 +1169,32 @@ export const Messages = memo(function Messages({
     });
   }, []);
 
-  const latestReasoningLabel = useMemo(() => reasoningWorkingLabel(items), [items]);
+  const reasoningMetaById = useMemo(() => {
+    const meta = new Map<string, ReturnType<typeof parseReasoning>>();
+    items.forEach((item) => {
+      if (item.kind === "reasoning") {
+        meta.set(item.id, parseReasoning(item));
+      }
+    });
+    return meta;
+  }, [items]);
+
+  const latestReasoningLabel = useMemo(() => {
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index];
+      if (item.kind === "message") {
+        break;
+      }
+      if (item.kind !== "reasoning") {
+        continue;
+      }
+      const parsed = reasoningMetaById.get(item.id);
+      if (parsed?.workingLabel) {
+        return parsed.workingLabel;
+      }
+    }
+    return null;
+  }, [items, reasoningMetaById]);
 
   const visibleItems = useMemo(
     () =>
@@ -1191,9 +1202,9 @@ export const Messages = memo(function Messages({
         if (item.kind !== "reasoning") {
           return true;
         }
-        return parseReasoning(item).hasBody;
+        return reasoningMetaById.get(item.id)?.hasBody ?? false;
       }),
-    [items],
+    [items, reasoningMetaById],
   );
 
   useEffect(() => {
@@ -1281,10 +1292,12 @@ export const Messages = memo(function Messages({
     }
     if (item.kind === "reasoning") {
       const isExpanded = expandedItems.has(item.id);
+      const parsed = reasoningMetaById.get(item.id) ?? parseReasoning(item);
       return (
         <ReasoningRow
           key={item.id}
           item={item}
+          parsed={parsed}
           isExpanded={isExpanded}
           onToggle={toggleExpanded}
           onOpenFileLink={openFileLink}

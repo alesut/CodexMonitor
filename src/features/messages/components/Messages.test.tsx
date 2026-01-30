@@ -220,6 +220,42 @@ describe("Messages", () => {
     expect(workingText?.textContent ?? "").not.toContain("Old reasoning title");
   });
 
+  it("keeps the latest title-only reasoning label without rendering a reasoning row", () => {
+    const items: ConversationItem[] = [
+      {
+        id: "reasoning-title-only",
+        kind: "reasoning",
+        summary: "Indexing workspace",
+        content: "",
+      },
+      {
+        id: "tool-after-reasoning",
+        kind: "tool",
+        title: "Command: rg --files",
+        detail: "/tmp",
+        toolType: "commandExecution",
+        output: "",
+        status: "running",
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking
+        processingStartedAt={Date.now() - 1_000}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const workingText = container.querySelector(".working-text");
+    expect(workingText?.textContent ?? "").toContain("Indexing workspace");
+    expect(container.querySelector(".reasoning-inline")).toBeNull();
+  });
+
   it("merges consecutive explore items under a single explored block", async () => {
     const items: ConversationItem[] = [
       {
