@@ -158,6 +158,7 @@ export type AppSettings = {
   archiveThreadShortcut: string | null;
   toggleProjectsSidebarShortcut: string | null;
   toggleGitSidebarShortcut: string | null;
+  branchSwitcherShortcut: string | null;
   toggleDebugPanelShortcut: string | null;
   toggleTerminalShortcut: string | null;
   cycleAgentNextShortcut: string | null;
@@ -175,6 +176,7 @@ export type AppSettings = {
   notificationSoundsEnabled: boolean;
   systemNotificationsEnabled: boolean;
   preloadGitDiffs: boolean;
+  gitDiffIgnoreWhitespaceChanges: boolean;
   experimentalCollabEnabled: boolean;
   collaborationModesEnabled: boolean;
   experimentalSteerEnabled: boolean;

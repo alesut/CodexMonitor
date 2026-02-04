@@ -191,6 +191,7 @@ type ShortcutSettingKey =
   | "archiveThreadShortcut"
   | "toggleProjectsSidebarShortcut"
   | "toggleGitSidebarShortcut"
+  | "branchSwitcherShortcut"
   | "toggleDebugPanelShortcut"
   | "toggleTerminalShortcut"
   | "cycleAgentNextShortcut"
@@ -209,6 +210,7 @@ type ShortcutDraftKey =
   | "archiveThread"
   | "projectsSidebar"
   | "gitSidebar"
+  | "branchSwitcher"
   | "debugPanel"
   | "terminal"
   | "cycleAgentNext"
@@ -230,6 +232,7 @@ const shortcutDraftKeyBySetting: Record<ShortcutSettingKey, ShortcutDraftKey> = 
   archiveThreadShortcut: "archiveThread",
   toggleProjectsSidebarShortcut: "projectsSidebar",
   toggleGitSidebarShortcut: "gitSidebar",
+  branchSwitcherShortcut: "branchSwitcher",
   toggleDebugPanelShortcut: "debugPanel",
   toggleTerminalShortcut: "terminal",
   cycleAgentNextShortcut: "cycleAgentNext",
@@ -380,6 +383,7 @@ export function SettingsView({
     archiveThread: appSettings.archiveThreadShortcut ?? "",
     projectsSidebar: appSettings.toggleProjectsSidebarShortcut ?? "",
     gitSidebar: appSettings.toggleGitSidebarShortcut ?? "",
+    branchSwitcher: appSettings.branchSwitcherShortcut ?? "",
     debugPanel: appSettings.toggleDebugPanelShortcut ?? "",
     terminal: appSettings.toggleTerminalShortcut ?? "",
     cycleAgentNext: appSettings.cycleAgentNextShortcut ?? "",
@@ -519,6 +523,7 @@ export function SettingsView({
       archiveThread: appSettings.archiveThreadShortcut ?? "",
       projectsSidebar: appSettings.toggleProjectsSidebarShortcut ?? "",
       gitSidebar: appSettings.toggleGitSidebarShortcut ?? "",
+      branchSwitcher: appSettings.branchSwitcherShortcut ?? "",
       debugPanel: appSettings.toggleDebugPanelShortcut ?? "",
       terminal: appSettings.toggleTerminalShortcut ?? "",
       cycleAgentNext: appSettings.cycleAgentNextShortcut ?? "",
@@ -538,6 +543,7 @@ export function SettingsView({
     appSettings.archiveThreadShortcut,
     appSettings.toggleProjectsSidebarShortcut,
     appSettings.toggleGitSidebarShortcut,
+    appSettings.branchSwitcherShortcut,
     appSettings.toggleDebugPanelShortcut,
     appSettings.toggleTerminalShortcut,
     appSettings.cycleAgentNextShortcut,
@@ -2306,6 +2312,30 @@ export function SettingsView({
                   </div>
                 </div>
                 <div className="settings-field">
+                  <div className="settings-field-label">Branch switcher</div>
+                  <div className="settings-field-row">
+                    <input
+                      className="settings-input settings-input--shortcut"
+                      value={formatShortcut(shortcutDrafts.branchSwitcher)}
+                      onKeyDown={(event) =>
+                        handleShortcutKeyDown(event, "branchSwitcherShortcut")
+                      }
+                      placeholder="Type shortcut"
+                      readOnly
+                    />
+                    <button
+                      type="button"
+                      className="ghost settings-button-compact"
+                      onClick={() => void updateShortcut("branchSwitcherShortcut", null)}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="settings-help">
+                    Default: {formatShortcut("cmd+b")}
+                  </div>
+                </div>
+                <div className="settings-field">
                   <div className="settings-field-label">Toggle debug panel</div>
                   <div className="settings-field-row">
                     <input
@@ -2687,6 +2717,27 @@ export function SettingsView({
                       })
                     }
                     aria-pressed={appSettings.preloadGitDiffs}
+                  >
+                    <span className="settings-toggle-knob" />
+                  </button>
+                </div>
+                <div className="settings-toggle-row">
+                  <div>
+                    <div className="settings-toggle-title">Ignore whitespace changes</div>
+                    <div className="settings-toggle-subtitle">
+                      Hides whitespace-only changes in local and commit diffs.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className={`settings-toggle ${appSettings.gitDiffIgnoreWhitespaceChanges ? "on" : ""}`}
+                    onClick={() =>
+                      void onUpdateAppSettings({
+                        ...appSettings,
+                        gitDiffIgnoreWhitespaceChanges: !appSettings.gitDiffIgnoreWhitespaceChanges,
+                      })
+                    }
+                    aria-pressed={appSettings.gitDiffIgnoreWhitespaceChanges}
                   >
                     <span className="settings-toggle-knob" />
                   </button>
