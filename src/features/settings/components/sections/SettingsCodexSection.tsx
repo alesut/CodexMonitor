@@ -382,8 +382,8 @@ export function SettingsCodexSection({
               }}
               aria-label="Remote provider"
             >
-              <option value="tcp">TCP</option>
-              <option value="orbit">Orbit</option>
+              <option value="tcp">TCP (wip)</option>
+              <option value="orbit">Orbit (wip)</option>
             </select>
             <div className="settings-help">
               Use TCP for host:port daemon access, or Orbit for self-hosted Cloudflare relay

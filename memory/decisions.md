@@ -274,3 +274,10 @@ Type: decision
 Event: Added end-to-end Tailscale setup support so users can self-host remote TCP access before iOS Orbit UX is finalized.
 Action: Implemented desktop `tailscale_status` and `tailscale_daemon_command_preview` commands, wired Settings helpers (detect, suggested host, daemon command), and updated blueprint docs to include the Tailscale bootstrap flow.
 Rule: Keep Tailscale as the first-run self-host bootstrap path for TCP remote setup while Orbit remains the production relay path.
+
+## 2026-02-07 21:04
+Context: Remote provider maturity signaling in Settings UI
+Type: preference
+Event: User requested both TCP and Orbit provider options be visibly marked as in progress.
+Action: Updated provider selector labels to `TCP (wip)` and `Orbit (wip)` in settings.
+Rule: Keep both remote provider labels marked `(wip)` until user requests removal after production-readiness.
