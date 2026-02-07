@@ -121,3 +121,13 @@ Rule: When converting effects between `useEffect` and `useLayoutEffect`, preserv
 Root cause: `autoScrollRef.current = true` still ran in `useEffect` after the new layout scroll pass, so first render on thread switch could evaluate stale `false`.
 Fix applied: Updated `src/features/messages/components/Messages.tsx` hook ordering/dependencies and added `re-pins to bottom on thread switch even when previous thread was scrolled up` in `src/features/messages/components/Messages.test.tsx`.
 Prevention rule: For scroll/anchor refs, pair layout-timing ref resets with layout-timing consumers and add regression coverage for cross-thread transitions.
+
+## 2026-02-07 21:14
+Context: CI `test-js` failure (`platformPaths.test.ts`)
+Type: mistake
+Event: New mobile platform tests mutated `navigator` directly without ensuring a `navigator` object exists in Node test environments.
+Action: Updated `withNavigatorValues` in `src/utils/platformPaths.test.ts` to create a temporary `globalThis.navigator` shim when missing, restore descriptors after each test, and clean up with `Reflect.deleteProperty`.
+Rule: Node-targeted unit tests must not assume browser globals exist; create and tear down explicit shims in helper setup.
+Root cause: The tests were authored assuming `navigator` is always available, but Vitest runs with `environment: node` in CI.
+Fix applied: Added a global-scope navigator shim path and descriptor-safe restore logic in `src/utils/platformPaths.test.ts`.
+Prevention rule: For tests that patch `navigator`, `window`, or `document`, guard setup with `typeof ... === \"undefined\"` and perform full teardown in `finally`.

@@ -1,28 +1,47 @@
 import { describe, expect, it } from "vitest";
 import { isMobilePlatform } from "./platformPaths";
 
+const globalScope = globalThis as typeof globalThis & { navigator?: Navigator };
+
 function withNavigatorValues(
   values: Partial<Pick<Navigator, "platform" | "userAgent">>,
   run: () => void,
 ) {
-  const originalPlatform = Object.getOwnPropertyDescriptor(navigator, "platform");
-  const originalUserAgent = Object.getOwnPropertyDescriptor(navigator, "userAgent");
-  Object.defineProperty(navigator, "platform", {
+  const hadNavigator = typeof globalScope.navigator !== "undefined";
+  if (!hadNavigator) {
+    Object.defineProperty(globalScope, "navigator", {
+      configurable: true,
+      writable: true,
+      value: {},
+    });
+  }
+
+  const activeNavigator = globalScope.navigator as Navigator;
+  const originalPlatform = Object.getOwnPropertyDescriptor(activeNavigator, "platform");
+  const originalUserAgent = Object.getOwnPropertyDescriptor(activeNavigator, "userAgent");
+  Object.defineProperty(activeNavigator, "platform", {
     configurable: true,
-    value: values.platform ?? navigator.platform,
+    value: values.platform ?? activeNavigator.platform ?? "",
   });
-  Object.defineProperty(navigator, "userAgent", {
+  Object.defineProperty(activeNavigator, "userAgent", {
     configurable: true,
-    value: values.userAgent ?? navigator.userAgent,
+    value: values.userAgent ?? activeNavigator.userAgent ?? "",
   });
   try {
     run();
   } finally {
     if (originalPlatform) {
-      Object.defineProperty(navigator, "platform", originalPlatform);
+      Object.defineProperty(activeNavigator, "platform", originalPlatform);
+    } else {
+      delete (activeNavigator as { platform?: string }).platform;
     }
     if (originalUserAgent) {
-      Object.defineProperty(navigator, "userAgent", originalUserAgent);
+      Object.defineProperty(activeNavigator, "userAgent", originalUserAgent);
+    } else {
+      delete (activeNavigator as { userAgent?: string }).userAgent;
+    }
+    if (!hadNavigator) {
+      Reflect.deleteProperty(globalScope, "navigator");
     }
   }
 }
