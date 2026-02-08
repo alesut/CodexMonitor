@@ -771,6 +771,14 @@ function MainApp() {
     [threadListSortKey, workspaces, listThreadsForWorkspace],
   );
 
+  const handleRefreshAllWorkspaceThreads = useCallback(() => {
+    const connectedWorkspaces = workspaces.filter((workspace) => workspace.connected);
+    connectedWorkspaces.forEach((workspace) => {
+      resetWorkspaceThreads(workspace.id);
+      void listThreadsForWorkspace(workspace);
+    });
+  }, [workspaces, resetWorkspaceThreads, listThreadsForWorkspace]);
+
   useResponseRequiredNotificationsController({
     systemNotificationsEnabled: appSettings.systemNotificationsEnabled,
     approvals,
@@ -1815,6 +1823,7 @@ function MainApp() {
     threadListCursorByWorkspace,
     threadListSortKey,
     onSetThreadListSortKey: handleSetThreadListSortKey,
+    onRefreshAllThreads: handleRefreshAllWorkspaceThreads,
     activeWorkspaceId,
     activeThreadId,
     activeItems,

@@ -26,6 +26,7 @@ const baseProps = {
   threadListCursorByWorkspace: {},
   threadListSortKey: "updated_at" as const,
   onSetThreadListSortKey: vi.fn(),
+  onRefreshAllThreads: vi.fn(),
   activeWorkspaceId: null,
   activeThreadId: null,
   accountRateLimits: null,
@@ -119,6 +120,43 @@ describe("Sidebar", () => {
 
     expect(onSetThreadListSortKey).toHaveBeenCalledWith("created_at");
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("refreshes all workspace threads from the header button", () => {
+    const onRefreshAllThreads = vi.fn();
+    render(
+      <Sidebar
+        {...baseProps}
+        workspaces={[
+          {
+            id: "ws-1",
+            name: "Workspace",
+            path: "/tmp/workspace",
+            connected: true,
+            settings: { sidebarCollapsed: false },
+          },
+        ]}
+        groupedWorkspaces={[
+          {
+            id: null,
+            name: "Workspaces",
+            workspaces: [
+              {
+                id: "ws-1",
+                name: "Workspace",
+                path: "/tmp/workspace",
+                connected: true,
+                settings: { sidebarCollapsed: false },
+              },
+            ],
+          },
+        ]}
+        onRefreshAllThreads={onRefreshAllThreads}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh all workspace threads" }));
+    expect(onRefreshAllThreads).toHaveBeenCalledTimes(1);
   });
 
   it("shows a top New Agent draft row and selects workspace when clicked", () => {

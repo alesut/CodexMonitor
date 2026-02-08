@@ -1078,14 +1078,17 @@ export function SettingsView({
         const status = await run();
         setTcpDaemonStatus(status);
       } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : typeof error === "string"
+              ? error
+              : "Unable to update mobile access daemon status.";
         setTcpDaemonStatus((prev) => ({
           state: "error",
           pid: null,
           startedAtMs: null,
-          lastError:
-            error instanceof Error
-              ? error.message
-              : "Unable to update mobile access daemon status.",
+          lastError: errorMessage,
           listenAddr: prev?.listenAddr ?? null,
         }));
       } finally {

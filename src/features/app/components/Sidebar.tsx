@@ -63,6 +63,7 @@ type SidebarProps = {
   threadListCursorByWorkspace: Record<string, string | null>;
   threadListSortKey: ThreadListSortKey;
   onSetThreadListSortKey: (sortKey: ThreadListSortKey) => void;
+  onRefreshAllThreads: () => void;
   activeWorkspaceId: string | null;
   activeThreadId: string | null;
   accountRateLimits: RateLimitSnapshot | null;
@@ -118,6 +119,7 @@ export const Sidebar = memo(function Sidebar({
   threadListCursorByWorkspace,
   threadListSortKey,
   onSetThreadListSortKey,
+  onRefreshAllThreads,
   activeWorkspaceId,
   activeThreadId,
   accountRateLimits,
@@ -248,6 +250,10 @@ export const Sidebar = memo(function Sidebar({
   const showAccountSwitcher = Boolean(activeWorkspaceId);
   const accountSwitchDisabled = accountSwitching || !activeWorkspaceId;
   const accountCancelDisabled = !accountSwitching || !activeWorkspaceId;
+  const refreshDisabled = workspaces.length === 0 || workspaces.every((workspace) => !workspace.connected);
+  const refreshInProgress = workspaces.some(
+    (workspace) => threadListLoadingByWorkspace[workspace.id] ?? false,
+  );
 
   const pinnedThreadRows = useMemo(() => {
     type ThreadRow = { thread: ThreadSummary; depth: number };
@@ -415,6 +421,8 @@ export const Sidebar = memo(function Sidebar({
         isSearchOpen={isSearchOpen}
         threadListSortKey={threadListSortKey}
         onSetThreadListSortKey={onSetThreadListSortKey}
+        onRefreshAllThreads={onRefreshAllThreads}
+        refreshDisabled={refreshDisabled || refreshInProgress}
       />
       <div className={`sidebar-search${isSearchOpen ? " is-open" : ""}`}>
         {isSearchOpen && (

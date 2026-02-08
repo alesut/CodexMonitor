@@ -115,6 +115,7 @@ type LayoutNodesOptions = {
   threadListCursorByWorkspace: Record<string, string | null>;
   threadListSortKey: ThreadListSortKey;
   onSetThreadListSortKey: (sortKey: ThreadListSortKey) => void;
+  onRefreshAllThreads: () => void;
   activeWorkspaceId: string | null;
   activeThreadId: string | null;
   activeItems: ConversationItem[];
@@ -491,6 +492,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       threadListCursorByWorkspace={options.threadListCursorByWorkspace}
       threadListSortKey={options.threadListSortKey}
       onSetThreadListSortKey={options.onSetThreadListSortKey}
+      onRefreshAllThreads={options.onRefreshAllThreads}
       activeWorkspaceId={options.activeWorkspaceId}
       activeThreadId={options.activeThreadId}
       accountRateLimits={options.activeRateLimits}
