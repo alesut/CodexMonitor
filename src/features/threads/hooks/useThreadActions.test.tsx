@@ -434,7 +434,7 @@ describe("useThreadActions", () => {
       await result.current.listThreadsForWorkspace(workspace);
     });
 
-    expect(listThreads).toHaveBeenCalledWith("ws-1", null, 20, "created_at");
+    expect(listThreads).toHaveBeenCalledWith("ws-1", null, 100, "created_at");
   });
 
   it("loads older threads when a cursor is available", async () => {

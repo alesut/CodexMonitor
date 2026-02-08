@@ -71,7 +71,7 @@ use futures_util::{SinkExt, StreamExt};
 use ignore::WalkBuilder;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::sync::{broadcast, mpsc, Mutex, Semaphore};
 use tokio::time::sleep;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
@@ -94,6 +94,7 @@ use types::{
 use workspace_settings::apply_workspace_settings_update;
 
 const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:4732";
+const MAX_IN_FLIGHT_RPC_PER_CONNECTION: usize = 32;
 
 fn spawn_with_client(
     event_sink: DaemonEventSink,
@@ -2182,6 +2183,30 @@ async fn forward_events(
     }
 }
 
+fn spawn_rpc_response_task(
+    state: Arc<DaemonState>,
+    out_tx: mpsc::UnboundedSender<String>,
+    id: Option<u64>,
+    method: String,
+    params: Value,
+    client_version: String,
+    request_limiter: Arc<Semaphore>,
+) {
+    tokio::spawn(async move {
+        let Ok(_permit) = request_limiter.acquire_owned().await else {
+            return;
+        };
+        let result = handle_rpc_request(&state, &method, params, client_version).await;
+        let response = match result {
+            Ok(result) => build_result_response(id, result),
+            Err(message) => build_error_response(id, &message),
+        };
+        if let Some(response) = response {
+            let _ = out_tx.send(response);
+        }
+    });
+}
+
 async fn handle_client(
     socket: TcpStream,
     config: Arc<DaemonConfig>,
@@ -2205,6 +2230,8 @@ async fn handle_client(
 
     let mut authenticated = config.token.is_none();
     let mut events_task: Option<tokio::task::JoinHandle<()>> = None;
+    let request_limiter = Arc::new(Semaphore::new(MAX_IN_FLIGHT_RPC_PER_CONNECTION));
+    let client_version = format!("daemon-{}", env!("CARGO_PKG_VERSION"));
 
     if authenticated {
         let rx = events.subscribe();
@@ -2260,15 +2287,15 @@ async fn handle_client(
             continue;
         }
 
-        let client_version = format!("daemon-{}", env!("CARGO_PKG_VERSION"));
-        let result = handle_rpc_request(&state, &method, params, client_version).await;
-        let response = match result {
-            Ok(result) => build_result_response(id, result),
-            Err(message) => build_error_response(id, &message),
-        };
-        if let Some(response) = response {
-            let _ = out_tx.send(response);
-        }
+        spawn_rpc_response_task(
+            Arc::clone(&state),
+            out_tx.clone(),
+            id,
+            method,
+            params,
+            client_version.clone(),
+            Arc::clone(&request_limiter),
+        );
     }
 
     drop(out_tx);
@@ -2278,11 +2305,12 @@ async fn handle_client(
     write_task.abort();
 }
 
-async fn handle_orbit_line(
+fn handle_orbit_line(
     line: &str,
-    state: &DaemonState,
-    out_tx: &mpsc::UnboundedSender<String>,
-    client_version: &str,
+    state: Arc<DaemonState>,
+    out_tx: mpsc::UnboundedSender<String>,
+    client_version: String,
+    request_limiter: Arc<Semaphore>,
 ) {
     let message: Value = match serde_json::from_str(line) {
         Ok(value) => value,
@@ -2314,14 +2342,15 @@ async fn handle_orbit_line(
         return;
     }
 
-    let result = handle_rpc_request(state, &method, params, client_version.to_string()).await;
-    let response = match result {
-        Ok(value) => build_result_response(id, value),
-        Err(message) => build_error_response(id, &message),
-    };
-    if let Some(response) = response {
-        let _ = out_tx.send(response);
-    }
+    spawn_rpc_response_task(
+        state,
+        out_tx,
+        id,
+        method,
+        params,
+        client_version,
+        request_limiter,
+    );
 }
 
 async fn run_orbit_mode(
@@ -2395,17 +2424,30 @@ async fn run_orbit_mode(
         );
 
         let client_version = format!("daemon-{}", env!("CARGO_PKG_VERSION"));
+        let request_limiter = Arc::new(Semaphore::new(MAX_IN_FLIGHT_RPC_PER_CONNECTION));
         while let Some(frame) = reader.next().await {
             match frame {
                 Ok(Message::Text(text)) => {
                     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
-                        handle_orbit_line(line, &state, &out_tx, &client_version).await;
+                        handle_orbit_line(
+                            line,
+                            Arc::clone(&state),
+                            out_tx.clone(),
+                            client_version.clone(),
+                            Arc::clone(&request_limiter),
+                        );
                     }
                 }
                 Ok(Message::Binary(bytes)) => {
                     if let Ok(text) = String::from_utf8(bytes.to_vec()) {
                         for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
-                            handle_orbit_line(line, &state, &out_tx, &client_version).await;
+                            handle_orbit_line(
+                                line,
+                                Arc::clone(&state),
+                                out_tx.clone(),
+                                client_version.clone(),
+                                Arc::clone(&request_limiter),
+                            );
                         }
                     }
                 }

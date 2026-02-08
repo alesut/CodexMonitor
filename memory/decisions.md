@@ -170,3 +170,27 @@ Context: iOS mobile viewport height sync
 Type: decision
 Rule: When syncing `--app-height` on mobile, account for `visualViewport.offsetTop` (use `visualViewport.height + visualViewport.offsetTop`) instead of `visualViewport.height` alone.
 Why: WKWebView can report a reduced visual viewport origin, and ignoring the offset under-sizes the app container and creates a bottom gap.
+
+## 2026-02-08 08:58
+Context: Mobile server settings UX scope
+Type: preference
+Rule: On iOS/mobile runtime, keep `Settings > Server` focused on connection setup/testing and hide desktop-only daemon/Tailscale/runner orchestration controls.
+Why: Mobile clients only need backend connection setup and verification, not desktop server process management.
+
+## 2026-02-08 09:06
+Context: Mobile server settings provider support
+Type: preference
+Rule: On iOS/mobile runtime, keep `Settings > Server` simplified but allow provider selection (`TCP` or `Orbit`) with provider-specific endpoint/token inputs and a single connect test action; keep desktop-only daemon/Tailscale/runner controls hidden.
+Why: Mobile needs a focused setup UX while still supporting both remote backends used by desktop setups.
+
+## 2026-02-08 08:54
+Context: Remote daemon RPC throughput for multi-workspace startup
+Type: decision
+Rule: Process authenticated daemon RPC requests concurrently (bounded by a per-connection semaphore) instead of strictly serial request/response handling.
+Why: Serial remote RPC processing causes workspace `connect_workspace`/`list_threads` startup calls to queue behind each other, making non-primary projects remain in loading state noticeably longer on mobile remote mode.
+
+## 2026-02-08 09:05
+Context: Remote thread list hydration performance
+Type: decision
+Rule: Keep initial per-workspace thread hydration bounded with larger `thread/list` page sizes and strict max-page caps instead of unbounded deep scans driven by cached activity.
+Why: In remote mode, repeated deep pagination per workspace causes long shimmering/serial-feeling sidebar loading due accumulated network round trips.

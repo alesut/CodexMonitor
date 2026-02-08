@@ -29,6 +29,12 @@ import {
 import { saveThreadActivity } from "../utils/threadStorage";
 import type { ThreadAction, ThreadState } from "./useThreadsReducer";
 
+const THREAD_LIST_TARGET_COUNT = 20;
+const THREAD_LIST_PAGE_SIZE = 100;
+const THREAD_LIST_MAX_PAGES_WITH_ACTIVITY = 8;
+const THREAD_LIST_MAX_PAGES_WITHOUT_ACTIVITY = 3;
+const THREAD_LIST_MAX_PAGES_OLDER = 6;
+
 type UseThreadActionsOptions = {
   dispatch: Dispatch<ThreadAction>;
   itemsByThread: ThreadState["itemsByThread"];
@@ -375,9 +381,9 @@ export function useThreadActions({
         const knownActivityByThread = threadActivityRef.current[workspace.id] ?? {};
         const hasKnownActivity = Object.keys(knownActivityByThread).length > 0;
         const matchingThreads: Record<string, unknown>[] = [];
-        const targetCount = 20;
-        const pageSize = 20;
-        const maxPagesWithoutMatch = hasKnownActivity ? Number.POSITIVE_INFINITY : 5;
+        const maxPagesWithoutMatch = hasKnownActivity
+          ? THREAD_LIST_MAX_PAGES_WITH_ACTIVITY
+          : THREAD_LIST_MAX_PAGES_WITHOUT_ACTIVITY;
         let pagesFetched = 0;
         let cursor: string | null = null;
         do {
@@ -386,7 +392,7 @@ export function useThreadActions({
             (await listThreadsService(
               workspace.id,
               cursor,
-              pageSize,
+              THREAD_LIST_PAGE_SIZE,
               requestedSortKey,
             )) as Record<string, unknown>;
           onDebug?.({
@@ -412,7 +418,10 @@ export function useThreadActions({
           if (matchingThreads.length === 0 && pagesFetched >= maxPagesWithoutMatch) {
             break;
           }
-        } while (cursor && matchingThreads.length < targetCount);
+          if (pagesFetched >= THREAD_LIST_MAX_PAGES_WITH_ACTIVITY) {
+            break;
+          }
+        } while (cursor && matchingThreads.length < THREAD_LIST_TARGET_COUNT);
 
         const uniqueById = new Map<string, Record<string, unknown>>();
         matchingThreads.forEach((thread) => {
@@ -466,7 +475,7 @@ export function useThreadActions({
           });
         }
         const summaries = uniqueThreads
-          .slice(0, targetCount)
+          .slice(0, THREAD_LIST_TARGET_COUNT)
           .map((thread, index) => {
             const id = String(thread?.id ?? "");
             const preview = asString(thread?.preview ?? "").trim();
@@ -554,9 +563,7 @@ export function useThreadActions({
       });
       try {
         const matchingThreads: Record<string, unknown>[] = [];
-        const targetCount = 20;
-        const pageSize = 20;
-        const maxPagesWithoutMatch = 10;
+        const maxPagesWithoutMatch = THREAD_LIST_MAX_PAGES_OLDER;
         let pagesFetched = 0;
         let cursor: string | null = nextCursor;
         do {
@@ -565,7 +572,7 @@ export function useThreadActions({
             (await listThreadsService(
               workspace.id,
               cursor,
-              pageSize,
+              THREAD_LIST_PAGE_SIZE,
               requestedSortKey,
             )) as Record<string, unknown>;
           onDebug?.({
@@ -591,7 +598,10 @@ export function useThreadActions({
           if (matchingThreads.length === 0 && pagesFetched >= maxPagesWithoutMatch) {
             break;
           }
-        } while (cursor && matchingThreads.length < targetCount);
+          if (pagesFetched >= THREAD_LIST_MAX_PAGES_OLDER) {
+            break;
+          }
+        } while (cursor && matchingThreads.length < THREAD_LIST_TARGET_COUNT);
 
         const existingIds = new Set(existing.map((thread) => thread.id));
         const additions: ThreadSummary[] = [];
