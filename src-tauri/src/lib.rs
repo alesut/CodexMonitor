@@ -36,6 +36,10 @@ pub fn run() {
         if std::env::var_os("__NV_PRIME_RENDER_OFFLOAD").is_none() {
             std::env::set_var("__NV_PRIME_RENDER_OFFLOAD", "1");
         }
+        // Work around sporadic blank WebKitGTK renders on X11 by disabling compositing mode.
+        if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        }
     }
 
     let builder = tauri::Builder::default()
