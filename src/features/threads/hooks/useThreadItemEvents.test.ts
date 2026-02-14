@@ -84,7 +84,7 @@ describe("useThreadItemEvents", () => {
     });
     expect(markProcessing).toHaveBeenCalledWith("thread-1", true);
     expect(markReviewing).toHaveBeenCalledWith("thread-1", true);
-    expect(applyCollabThreadLinks).toHaveBeenCalledWith("thread-1", item);
+    expect(applyCollabThreadLinks).toHaveBeenCalledWith("ws-1", "thread-1", item);
     expect(dispatch).toHaveBeenCalledWith({
       type: "upsertItem",
       workspaceId: "ws-1",
