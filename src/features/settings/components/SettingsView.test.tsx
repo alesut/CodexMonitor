@@ -89,6 +89,7 @@ const baseSettings: AppSettings = {
   experimentalCollabEnabled: false,
   collaborationModesEnabled: true,
   steerEnabled: true,
+  pauseQueuedMessagesWhenResponseRequired: true,
   unifiedExecEnabled: true,
   experimentalAppsEnabled: false,
   personality: "friendly",

@@ -630,6 +630,11 @@ pub(crate) struct AppSettings {
     )]
     pub(crate) steer_enabled: bool,
     #[serde(
+        default = "default_pause_queued_messages_when_response_required",
+        rename = "pauseQueuedMessagesWhenResponseRequired"
+    )]
+    pub(crate) pause_queued_messages_when_response_required: bool,
+    #[serde(
         default = "default_unified_exec_enabled",
         rename = "unifiedExecEnabled",
         alias = "experimentalUnifiedExecEnabled"
@@ -970,6 +975,10 @@ fn default_steer_enabled() -> bool {
     true
 }
 
+fn default_pause_queued_messages_when_response_required() -> bool {
+    true
+}
+
 fn default_unified_exec_enabled() -> bool {
     true
 }
@@ -1210,6 +1219,8 @@ impl Default for AppSettings {
             experimental_collab_enabled: false,
             collaboration_modes_enabled: true,
             steer_enabled: true,
+            pause_queued_messages_when_response_required:
+                default_pause_queued_messages_when_response_required(),
             unified_exec_enabled: true,
             experimental_apps_enabled: false,
             personality: default_personality(),
@@ -1373,6 +1384,7 @@ mod tests {
         assert!(settings.commit_message_prompt.contains("{diff}"));
         assert!(settings.collaboration_modes_enabled);
         assert!(settings.steer_enabled);
+        assert!(settings.pause_queued_messages_when_response_required);
         assert!(settings.unified_exec_enabled);
         assert!(!settings.experimental_apps_enabled);
         assert_eq!(settings.personality, "friendly");
