@@ -1,6 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
+use tokio::sync::Mutex;
 
 use super::events::{normalize_app_server_event, SupervisorEvent};
 use super::{
@@ -9,6 +12,48 @@ use super::{
     SupervisorThreadState, SupervisorThreadStatus, SupervisorWorkspaceState,
     DEFAULT_ACTIVITY_FEED_LIMIT,
 };
+use crate::backend::app_server::WorkspaceSession;
+use crate::types::WorkspaceEntry;
+
+pub(crate) const SUPERVISOR_HEALTH_TICK_MS: u64 = 10_000;
+
+pub(crate) fn now_timestamp_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or_default()
+}
+
+pub(crate) async fn run_health_pull_tick(
+    supervisor_loop: &Arc<Mutex<SupervisorLoop>>,
+    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    now_ms: i64,
+) {
+    let snapshots = collect_health_inputs(workspaces, sessions).await;
+    let mut supervisor_loop = supervisor_loop.lock().await;
+    supervisor_loop.run_health_check(&snapshots, now_ms);
+}
+
+async fn collect_health_inputs(
+    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+) -> Vec<SupervisorWorkspaceHealthInput> {
+    let connected_workspace_ids = {
+        let sessions = sessions.lock().await;
+        sessions.keys().cloned().collect::<HashSet<_>>()
+    };
+    let workspaces = workspaces.lock().await;
+
+    workspaces
+        .values()
+        .map(|workspace| SupervisorWorkspaceHealthInput {
+            workspace_id: workspace.id.clone(),
+            workspace_name: Some(workspace.name.clone()),
+            connected: connected_workspace_ids.contains(&workspace.id),
+        })
+        .collect::<Vec<_>>()
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct SupervisorLoopConfig {

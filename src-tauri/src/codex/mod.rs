@@ -2,7 +2,7 @@ use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub(crate) mod args;
 pub(crate) mod config;
@@ -18,12 +18,7 @@ use crate::shared::codex_core;
 use crate::state::AppState;
 use crate::types::WorkspaceEntry;
 
-fn emit_thread_live_event(
-    app: &AppHandle,
-    workspace_id: &str,
-    method: &str,
-    params: Value,
-) {
+fn emit_thread_live_event(app: &AppHandle, workspace_id: &str, method: &str, params: Value) {
     let _ = app.emit(
         "app-server-event",
         AppServerEvent {
@@ -44,7 +39,11 @@ pub(crate) async fn spawn_workspace_session(
     codex_home: Option<PathBuf>,
 ) -> Result<Arc<WorkspaceSession>, String> {
     let client_version = app_handle.package_info().version.to_string();
-    let event_sink = TauriEventSink::new(app_handle);
+    let supervisor_loop = {
+        let state = app_handle.state::<AppState>();
+        Arc::clone(&state.supervisor_loop)
+    };
+    let event_sink = TauriEventSink::new(app_handle, Some(supervisor_loop));
     spawn_workspace_session_inner(
         entry,
         default_codex_bin,
@@ -132,8 +131,12 @@ pub(crate) async fn thread_live_subscribe(
         .await;
     }
 
-    codex_core::thread_live_subscribe_core(&state.sessions, workspace_id.clone(), thread_id.clone())
-        .await?;
+    codex_core::thread_live_subscribe_core(
+        &state.sessions,
+        workspace_id.clone(),
+        thread_id.clone(),
+    )
+    .await?;
     let subscription_id = format!("{}:{}", workspace_id, thread_id);
     emit_thread_live_event(
         &app,
@@ -233,8 +236,7 @@ pub(crate) async fn list_threads(
         .await;
     }
 
-    codex_core::list_threads_core(&state.sessions, workspace_id, cursor, limit, sort_key, cwd)
-        .await
+    codex_core::list_threads_core(&state.sessions, workspace_id, cursor, limit, sort_key, cwd).await
 }
 
 #[tauri::command]
@@ -565,8 +567,8 @@ pub(crate) async fn get_agents_settings(
     app: AppHandle,
 ) -> Result<agents_config_core::AgentsSettingsDto, String> {
     if remote_backend::is_remote_mode(&*state).await {
-        let response = remote_backend::call_remote(&*state, app, "get_agents_settings", json!({}))
-            .await?;
+        let response =
+            remote_backend::call_remote(&*state, app, "get_agents_settings", json!({})).await?;
         return serde_json::from_value(response).map_err(|err| err.to_string());
     }
 
@@ -600,13 +602,9 @@ pub(crate) async fn create_agent(
     app: AppHandle,
 ) -> Result<agents_config_core::AgentsSettingsDto, String> {
     if remote_backend::is_remote_mode(&*state).await {
-        let response = remote_backend::call_remote(
-            &*state,
-            app,
-            "create_agent",
-            json!({ "input": input }),
-        )
-        .await?;
+        let response =
+            remote_backend::call_remote(&*state, app, "create_agent", json!({ "input": input }))
+                .await?;
         return serde_json::from_value(response).map_err(|err| err.to_string());
     }
 
@@ -620,13 +618,9 @@ pub(crate) async fn update_agent(
     app: AppHandle,
 ) -> Result<agents_config_core::AgentsSettingsDto, String> {
     if remote_backend::is_remote_mode(&*state).await {
-        let response = remote_backend::call_remote(
-            &*state,
-            app,
-            "update_agent",
-            json!({ "input": input }),
-        )
-        .await?;
+        let response =
+            remote_backend::call_remote(&*state, app, "update_agent", json!({ "input": input }))
+                .await?;
         return serde_json::from_value(response).map_err(|err| err.to_string());
     }
 
@@ -640,13 +634,9 @@ pub(crate) async fn delete_agent(
     app: AppHandle,
 ) -> Result<agents_config_core::AgentsSettingsDto, String> {
     if remote_backend::is_remote_mode(&*state).await {
-        let response = remote_backend::call_remote(
-            &*state,
-            app,
-            "delete_agent",
-            json!({ "input": input }),
-        )
-        .await?;
+        let response =
+            remote_backend::call_remote(&*state, app, "delete_agent", json!({ "input": input }))
+                .await?;
         return serde_json::from_value(response).map_err(|err| err.to_string());
     }
 

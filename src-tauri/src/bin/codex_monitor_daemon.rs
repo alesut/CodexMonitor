@@ -69,6 +69,7 @@ use std::io::Read;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ignore::WalkBuilder;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -79,6 +80,7 @@ use backend::app_server::{spawn_workspace_session, WorkspaceSession};
 use backend::events::{AppServerEvent, EventSink, TerminalExit, TerminalOutput};
 use shared::codex_core::CodexLoginCancelState;
 use shared::prompts_core::{self, CustomPromptEntry};
+use shared::supervisor_core::supervisor_loop::{self, SupervisorLoop, SupervisorLoopConfig};
 use shared::{
     agents_config_core, codex_aux_core, codex_core, files_core, git_core, git_ui_core,
     local_usage_core, settings_core, workspaces_core, worktree_core,
@@ -116,6 +118,7 @@ fn spawn_with_client(
 #[derive(Clone)]
 struct DaemonEventSink {
     tx: broadcast::Sender<DaemonEvent>,
+    supervisor_loop: Arc<Mutex<SupervisorLoop>>,
 }
 
 #[derive(Clone)]
@@ -129,6 +132,17 @@ enum DaemonEvent {
 
 impl EventSink for DaemonEventSink {
     fn emit_app_server_event(&self, event: AppServerEvent) {
+        let supervisor_loop = Arc::clone(&self.supervisor_loop);
+        let workspace_id = event.workspace_id.clone();
+        let message = event.message.clone();
+        tokio::spawn(async move {
+            let mut supervisor_loop = supervisor_loop.lock().await;
+            supervisor_loop.apply_app_server_event(
+                &workspace_id,
+                &message,
+                supervisor_loop::now_timestamp_ms(),
+            );
+        });
         let _ = self.tx.send(DaemonEvent::AppServer(event));
     }
 
@@ -151,6 +165,7 @@ struct DaemonState {
     data_dir: PathBuf,
     workspaces: Mutex<HashMap<String, WorkspaceEntry>>,
     sessions: Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    supervisor_loop: Arc<Mutex<SupervisorLoop>>,
     storage_path: PathBuf,
     settings_path: PathBuf,
     app_settings: Mutex<AppSettings>,
@@ -166,7 +181,11 @@ struct WorkspaceFileResponse {
 }
 
 impl DaemonState {
-    fn load(config: &DaemonConfig, event_sink: DaemonEventSink) -> Self {
+    fn load(
+        config: &DaemonConfig,
+        event_sink: DaemonEventSink,
+        supervisor_loop: Arc<Mutex<SupervisorLoop>>,
+    ) -> Self {
         let storage_path = config.data_dir.join("workspaces.json");
         let settings_path = config.data_dir.join("settings.json");
         let workspaces = read_workspaces(&storage_path).unwrap_or_default();
@@ -178,6 +197,7 @@ impl DaemonState {
             data_dir: config.data_dir.clone(),
             workspaces: Mutex::new(workspaces),
             sessions: Mutex::new(HashMap::new()),
+            supervisor_loop,
             storage_path,
             settings_path,
             app_settings: Mutex::new(app_settings),
@@ -507,7 +527,11 @@ impl DaemonState {
             .await
     }
 
-    async fn set_codex_feature_flag(&self, feature_key: String, enabled: bool) -> Result<(), String> {
+    async fn set_codex_feature_flag(
+        &self,
+        feature_key: String,
+        enabled: bool,
+    ) -> Result<(), String> {
         codex_config::write_feature_enabled(feature_key.as_str(), enabled)
     }
 
@@ -789,7 +813,8 @@ impl DaemonState {
         cursor: Option<String>,
         limit: Option<u32>,
     ) -> Result<Value, String> {
-        codex_core::experimental_feature_list_core(&self.sessions, workspace_id, cursor, limit).await
+        codex_core::experimental_feature_list_core(&self.sessions, workspace_id, cursor, limit)
+            .await
     }
 
     async fn collaboration_mode_list(&self, workspace_id: String) -> Result<Value, String> {
@@ -933,8 +958,14 @@ impl DaemonState {
         visibility: String,
         branch: Option<String>,
     ) -> Result<Value, String> {
-        git_ui_core::create_github_repo_core(&self.workspaces, workspace_id, repo, visibility, branch)
-            .await
+        git_ui_core::create_github_repo_core(
+            &self.workspaces,
+            workspace_id,
+            repo,
+            visibility,
+            branch,
+        )
+        .await
     }
 
     async fn list_git_roots(
@@ -1494,14 +1525,21 @@ mod tests {
 
     fn test_state(data_dir: &std::path::Path) -> DaemonState {
         let (tx, _rx) = broadcast::channel::<DaemonEvent>(32);
+        let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
+            SupervisorLoopConfig::default(),
+        )));
         DaemonState {
             data_dir: data_dir.to_path_buf(),
             workspaces: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
+            supervisor_loop: Arc::clone(&supervisor_loop),
             storage_path: data_dir.join("workspaces.json"),
             settings_path: data_dir.join("settings.json"),
             app_settings: Mutex::new(AppSettings::default()),
-            event_sink: DaemonEventSink { tx },
+            event_sink: DaemonEventSink {
+                tx,
+                supervisor_loop,
+            },
             codex_login_cancels: Mutex::new(HashMap::new()),
             daemon_binary_path: Some("/tmp/codex-monitor-daemon".to_string()),
         }
@@ -1656,11 +1694,31 @@ fn main() {
 
     runtime.block_on(async move {
         let (events_tx, _events_rx) = broadcast::channel::<DaemonEvent>(2048);
+        let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
+            SupervisorLoopConfig::default(),
+        )));
         let event_sink = DaemonEventSink {
             tx: events_tx.clone(),
+            supervisor_loop: Arc::clone(&supervisor_loop),
         };
-        let state = Arc::new(DaemonState::load(&config, event_sink));
+        let state = Arc::new(DaemonState::load(&config, event_sink, supervisor_loop));
         let config = Arc::new(config);
+        {
+            let state = Arc::clone(&state);
+            tokio::spawn(async move {
+                let interval = Duration::from_millis(supervisor_loop::SUPERVISOR_HEALTH_TICK_MS);
+                loop {
+                    supervisor_loop::run_health_pull_tick(
+                        &state.supervisor_loop,
+                        &state.workspaces,
+                        &state.sessions,
+                        supervisor_loop::now_timestamp_ms(),
+                    )
+                    .await;
+                    tokio::time::sleep(interval).await;
+                }
+            });
+        }
 
         let listener = match TcpListener::bind(config.listen).await {
             Ok(listener) => listener,

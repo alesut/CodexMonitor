@@ -273,7 +273,7 @@ pub(crate) async fn terminal_open(
         }
         sessions.insert(key, Arc::clone(&session));
     }
-    let event_sink = TauriEventSink::new(app.clone());
+    let event_sink = TauriEventSink::new(app.clone(), Some(Arc::clone(&state.supervisor_loop)));
     spawn_terminal_reader(
         event_sink,
         app,

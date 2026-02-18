@@ -1,5 +1,6 @@
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tauri::Manager;
 #[cfg(desktop)]
 use tauri::RunEvent;
@@ -78,9 +79,7 @@ pub fn run() {
             .unwrap_or(false)
             || std::env::var_os("WAYLAND_DISPLAY").is_some();
         let has_nvidia = std::path::Path::new("/proc/driver/nvidia/version").exists();
-        if is_wayland
-            && has_nvidia
-            && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
+        if is_wayland && has_nvidia && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
         {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }
@@ -114,6 +113,27 @@ pub fn run() {
         .setup(|app| {
             let state = state::AppState::load(&app.handle());
             app.manage(state);
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        {
+                            let state = app_handle.state::<state::AppState>();
+                            shared::supervisor_core::supervisor_loop::run_health_pull_tick(
+                                &state.supervisor_loop,
+                                &state.workspaces,
+                                &state.sessions,
+                                shared::supervisor_core::supervisor_loop::now_timestamp_ms(),
+                            )
+                            .await;
+                        }
+                        tokio::time::sleep(Duration::from_millis(
+                            shared::supervisor_core::supervisor_loop::SUPERVISOR_HEALTH_TICK_MS,
+                        ))
+                        .await;
+                    }
+                });
+            }
             #[cfg(desktop)]
             {
                 let app_handle = app.handle().clone();
