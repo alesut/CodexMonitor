@@ -80,6 +80,8 @@ use backend::app_server::{spawn_workspace_session, WorkspaceSession};
 use backend::events::{AppServerEvent, EventSink, TerminalExit, TerminalOutput};
 use shared::codex_core::CodexLoginCancelState;
 use shared::prompts_core::{self, CustomPromptEntry};
+use shared::supervisor_core::dispatch::SupervisorDispatchExecutor;
+use shared::supervisor_core::service as supervisor_service;
 use shared::supervisor_core::supervisor_loop::{self, SupervisorLoop, SupervisorLoopConfig};
 use shared::{
     agents_config_core, codex_aux_core, codex_core, files_core, git_core, git_ui_core,
@@ -166,6 +168,7 @@ struct DaemonState {
     workspaces: Mutex<HashMap<String, WorkspaceEntry>>,
     sessions: Mutex<HashMap<String, Arc<WorkspaceSession>>>,
     supervisor_loop: Arc<Mutex<SupervisorLoop>>,
+    supervisor_dispatch_executor: Arc<Mutex<SupervisorDispatchExecutor>>,
     storage_path: PathBuf,
     settings_path: PathBuf,
     app_settings: Mutex<AppSettings>,
@@ -185,6 +188,7 @@ impl DaemonState {
         config: &DaemonConfig,
         event_sink: DaemonEventSink,
         supervisor_loop: Arc<Mutex<SupervisorLoop>>,
+        supervisor_dispatch_executor: Arc<Mutex<SupervisorDispatchExecutor>>,
     ) -> Self {
         let storage_path = config.data_dir.join("workspaces.json");
         let settings_path = config.data_dir.join("settings.json");
@@ -198,6 +202,7 @@ impl DaemonState {
             workspaces: Mutex::new(workspaces),
             sessions: Mutex::new(HashMap::new()),
             supervisor_loop,
+            supervisor_dispatch_executor,
             storage_path,
             settings_path,
             app_settings: Mutex::new(app_settings),
@@ -876,6 +881,46 @@ impl DaemonState {
         codex_core::remember_approval_rule_core(&self.workspaces, workspace_id, command).await
     }
 
+    async fn supervisor_snapshot(&self) -> Result<Value, String> {
+        let snapshot = supervisor_service::supervisor_snapshot_core(&self.supervisor_loop).await;
+        serde_json::to_value(snapshot).map_err(|error| error.to_string())
+    }
+
+    async fn supervisor_feed(
+        &self,
+        limit: Option<u32>,
+        needs_input_only: bool,
+    ) -> Result<Value, String> {
+        let response = supervisor_service::supervisor_feed_core(
+            &self.supervisor_loop,
+            limit.map(|value| value as usize),
+            needs_input_only,
+        )
+        .await;
+        serde_json::to_value(response).map_err(|error| error.to_string())
+    }
+
+    async fn supervisor_dispatch(&self, contract: Value) -> Result<Value, String> {
+        let response = supervisor_service::supervisor_dispatch_core(
+            &self.supervisor_loop,
+            &self.supervisor_dispatch_executor,
+            &self.sessions,
+            &contract,
+        )
+        .await?;
+        serde_json::to_value(response).map_err(|error| error.to_string())
+    }
+
+    async fn supervisor_ack_signal(&self, signal_id: String) -> Result<Value, String> {
+        supervisor_service::supervisor_ack_signal_core(
+            &self.supervisor_loop,
+            signal_id.as_str(),
+            supervisor_loop::now_timestamp_ms(),
+        )
+        .await?;
+        Ok(json!({ "ok": true }))
+    }
+
     async fn get_config_model(&self, workspace_id: String) -> Result<Value, String> {
         codex_core::get_config_model_core(&self.workspaces, workspace_id).await
     }
@@ -1528,11 +1573,13 @@ mod tests {
         let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
             SupervisorLoopConfig::default(),
         )));
+        let supervisor_dispatch_executor = Arc::new(Mutex::new(SupervisorDispatchExecutor::new()));
         DaemonState {
             data_dir: data_dir.to_path_buf(),
             workspaces: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
             supervisor_loop: Arc::clone(&supervisor_loop),
+            supervisor_dispatch_executor,
             storage_path: data_dir.join("workspaces.json"),
             settings_path: data_dir.join("settings.json"),
             app_settings: Mutex::new(AppSettings::default()),
@@ -1697,11 +1744,17 @@ fn main() {
         let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
             SupervisorLoopConfig::default(),
         )));
+        let supervisor_dispatch_executor = Arc::new(Mutex::new(SupervisorDispatchExecutor::new()));
         let event_sink = DaemonEventSink {
             tx: events_tx.clone(),
             supervisor_loop: Arc::clone(&supervisor_loop),
         };
-        let state = Arc::new(DaemonState::load(&config, event_sink, supervisor_loop));
+        let state = Arc::new(DaemonState::load(
+            &config,
+            event_sink,
+            supervisor_loop,
+            supervisor_dispatch_executor,
+        ));
         let config = Arc::new(config);
         {
             let state = Arc::clone(&state);

@@ -29,6 +29,7 @@ mod settings;
 mod shared;
 mod state;
 mod storage;
+mod supervisor;
 mod tailscale;
 #[cfg(desktop)]
 mod terminal;
@@ -216,6 +217,10 @@ pub fn run() {
             codex::start_review,
             codex::respond_to_server_request,
             codex::remember_approval_rule,
+            supervisor::supervisor_snapshot,
+            supervisor::supervisor_feed,
+            supervisor::supervisor_dispatch,
+            supervisor::supervisor_ack_signal,
             codex::generate_commit_message,
             codex::generate_run_metadata,
             codex::generate_agent_description,

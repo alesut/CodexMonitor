@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 
 use crate::dictation::DictationState;
 use crate::shared::codex_core::CodexLoginCancelState;
+use crate::shared::supervisor_core::dispatch::SupervisorDispatchExecutor;
 use crate::shared::supervisor_core::supervisor_loop::{SupervisorLoop, SupervisorLoopConfig};
 use crate::storage::{read_settings, read_workspaces};
 use crate::types::{AppSettings, TcpDaemonState, TcpDaemonStatus, WorkspaceEntry};
@@ -43,6 +44,7 @@ pub(crate) struct AppState {
     pub(crate) codex_login_cancels: Mutex<HashMap<String, CodexLoginCancelState>>,
     pub(crate) tcp_daemon: Mutex<TcpDaemonRuntime>,
     pub(crate) supervisor_loop: Arc<Mutex<SupervisorLoop>>,
+    pub(crate) supervisor_dispatch_executor: Arc<Mutex<SupervisorDispatchExecutor>>,
 }
 
 impl AppState {
@@ -69,6 +71,7 @@ impl AppState {
             supervisor_loop: Arc::new(Mutex::new(SupervisorLoop::new(
                 SupervisorLoopConfig::default(),
             ))),
+            supervisor_dispatch_executor: Arc::new(Mutex::new(SupervisorDispatchExecutor::new())),
         }
     }
 }

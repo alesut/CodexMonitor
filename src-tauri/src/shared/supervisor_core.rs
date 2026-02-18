@@ -2,12 +2,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+#[path = "supervisor_core/contract.rs"]
+pub(crate) mod contract;
 #[path = "supervisor_core/dispatch.rs"]
 pub(crate) mod dispatch;
 #[path = "supervisor_core/events.rs"]
 pub(crate) mod events;
-#[path = "supervisor_core/contract.rs"]
-pub(crate) mod contract;
+#[path = "supervisor_core/service.rs"]
+pub(crate) mod service;
 #[path = "supervisor_core/loop.rs"]
 pub(crate) mod supervisor_loop;
 
