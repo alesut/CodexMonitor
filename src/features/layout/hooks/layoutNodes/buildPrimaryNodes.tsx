@@ -1,6 +1,7 @@
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left";
 import { Sidebar } from "../../../app/components/Sidebar";
 import { Home } from "../../../home/components/Home";
+import { SupervisorHome } from "../../../supervisor/components/SupervisorHome";
 import { MainHeader } from "../../../app/components/MainHeader";
 import { Messages } from "../../../messages/components/Messages";
 import { ApprovalToasts } from "../../../app/components/ApprovalToasts";
@@ -62,7 +63,9 @@ export function buildPrimaryNodes(options: LayoutNodesOptions): PrimaryLayoutNod
       onOpenDebug={options.onOpenDebug}
       showDebugButton={options.showDebugButton}
       onAddWorkspace={options.onAddWorkspace}
+      homeSection={options.homeSection}
       onSelectHome={options.onSelectHome}
+      onSelectSupervisor={options.onSelectSupervisor}
       onSelectWorkspace={options.onSelectWorkspace}
       onConnectWorkspace={options.onConnectWorkspace}
       onAddAgent={options.onAddAgent}
@@ -227,7 +230,9 @@ export function buildPrimaryNodes(options: LayoutNodesOptions): PrimaryLayoutNod
     <ErrorToasts toasts={options.errorToasts} onDismiss={options.onDismissErrorToast} />
   );
 
-  const homeNode = (
+  const homeNode = options.homeSection === "supervisor" ? (
+    <SupervisorHome />
+  ) : (
     <Home
       onOpenSettings={options.onOpenSettings}
       onAddWorkspace={options.onAddWorkspace}

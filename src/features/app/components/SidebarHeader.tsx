@@ -13,7 +13,9 @@ import {
 import { useDismissibleMenu } from "../hooks/useDismissibleMenu";
 
 type SidebarHeaderProps = {
+  homeSection: "projects" | "supervisor";
   onSelectHome: () => void;
+  onSelectSupervisor: () => void;
   onAddWorkspace: () => void;
   onToggleSearch: () => void;
   isSearchOpen: boolean;
@@ -25,7 +27,9 @@ type SidebarHeaderProps = {
 };
 
 export function SidebarHeader({
+  homeSection,
   onSelectHome,
+  onSelectSupervisor,
   onAddWorkspace,
   onToggleSearch,
   isSearchOpen,
@@ -66,12 +70,28 @@ export function SidebarHeader({
             <FolderPlus aria-hidden />
           </button>
           <button
-            className="subtitle subtitle-button sidebar-title-button"
+            className={`subtitle subtitle-button sidebar-title-button${
+              homeSection === "projects" ? " is-active" : ""
+            }`}
             onClick={onSelectHome}
             data-tauri-drag-region="false"
             aria-label="Open home"
+            aria-current={homeSection === "projects" ? "page" : undefined}
+            type="button"
           >
             Projects
+          </button>
+          <button
+            className={`subtitle subtitle-button sidebar-title-button${
+              homeSection === "supervisor" ? " is-active" : ""
+            }`}
+            onClick={onSelectSupervisor}
+            data-tauri-drag-region="false"
+            aria-label="Open supervisor"
+            aria-current={homeSection === "supervisor" ? "page" : undefined}
+            type="button"
+          >
+            Supervisor
           </button>
         </div>
       </div>

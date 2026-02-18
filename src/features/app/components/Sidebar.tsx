@@ -79,7 +79,9 @@ type SidebarProps = {
   onOpenDebug: () => void;
   showDebugButton: boolean;
   onAddWorkspace: () => void;
+  homeSection: "projects" | "supervisor";
   onSelectHome: () => void;
+  onSelectSupervisor: () => void;
   onSelectWorkspace: (id: string) => void;
   onConnectWorkspace: (workspace: WorkspaceInfo) => void;
   onAddAgent: (workspace: WorkspaceInfo) => void;
@@ -137,7 +139,9 @@ export const Sidebar = memo(function Sidebar({
   onOpenDebug,
   showDebugButton,
   onAddWorkspace,
+  homeSection,
   onSelectHome,
+  onSelectSupervisor,
   onSelectWorkspace,
   onConnectWorkspace,
   onAddAgent,
@@ -435,7 +439,9 @@ export const Sidebar = memo(function Sidebar({
       onDrop={onWorkspaceDrop}
     >
       <SidebarHeader
+        homeSection={homeSection}
         onSelectHome={onSelectHome}
+        onSelectSupervisor={onSelectSupervisor}
         onAddWorkspace={onAddWorkspace}
         onToggleSearch={() => setIsSearchOpen((prev) => !prev)}
         isSearchOpen={isSearchOpen}

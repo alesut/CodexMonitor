@@ -40,7 +40,9 @@ const baseProps = {
   onOpenDebug: vi.fn(),
   showDebugButton: false,
   onAddWorkspace: vi.fn(),
+  homeSection: "projects" as const,
   onSelectHome: vi.fn(),
+  onSelectSupervisor: vi.fn(),
   onSelectWorkspace: vi.fn(),
   onConnectWorkspace: vi.fn(),
   onAddAgent: vi.fn(),
@@ -241,5 +243,21 @@ describe("Sidebar", () => {
 
     fireEvent.click(draftRow);
     expect(onSelectWorkspace).toHaveBeenCalledWith("ws-1");
+  });
+
+  it("switches to supervisor from the sidebar header", () => {
+    const onSelectSupervisor = vi.fn();
+    render(
+      <Sidebar
+        {...baseProps}
+        homeSection="projects"
+        onSelectSupervisor={onSelectSupervisor}
+      />,
+    );
+
+    const supervisorButton = screen.getByRole("button", { name: "Open supervisor" });
+    fireEvent.click(supervisorButton);
+
+    expect(onSelectSupervisor).toHaveBeenCalledTimes(1);
   });
 });

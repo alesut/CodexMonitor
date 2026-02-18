@@ -109,6 +109,17 @@
 
 .sidebar-title-button {
   min-width: 0;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+
+.sidebar-title-button:hover,
+.sidebar-title-button:focus-visible {
+  color: var(--text-strong);
+}
+
+.sidebar-title-button.is-active {
+  color: var(--text-strong);
 }
 
 .sidebar-title-add {

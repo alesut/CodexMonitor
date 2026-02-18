@@ -10,6 +10,7 @@ import "./styles/ds-popover.css";
 import "./styles/buttons.css";
 import "./styles/sidebar.css";
 import "./styles/home.css";
+import "./styles/supervisor.css";
 import "./styles/workspace-home.css";
 import "./styles/main.css";
 import "./styles/messages.css";
@@ -43,6 +44,7 @@ import { AppLayout } from "@app/components/AppLayout";
 import { AppModals } from "@app/components/AppModals";
 import { MainHeaderActions } from "@app/components/MainHeaderActions";
 import { useLayoutNodes } from "@/features/layout/hooks/useLayoutNodes";
+import type { HomeSection } from "@/features/layout/hooks/layoutNodes/types";
 import { useWorkspaceDropZone } from "@/features/workspaces/hooks/useWorkspaceDropZone";
 import { useThreads } from "@threads/hooks/useThreads";
 import { useWindowDrag } from "@/features/layout/hooks/useWindowDrag";
@@ -197,6 +199,7 @@ function MainApp() {
   const [activeTab, setActiveTab] = useState<
     "home" | "projects" | "codex" | "git" | "log"
   >("codex");
+  const [homeSection, setHomeSection] = useState<HomeSection>("projects");
   const [mobileThreadRefreshLoading, setMobileThreadRefreshLoading] = useState(false);
   const tabletTab =
     activeTab === "projects" || activeTab === "home" ? "codex" : activeTab;
@@ -1780,7 +1783,7 @@ function MainApp() {
 
   const {
     onOpenSettings: handleSidebarOpenSettings,
-    onSelectHome: handleSidebarSelectHome,
+    onSelectHome: handleSidebarSelectHomeRaw,
     onSelectWorkspace: handleSidebarSelectWorkspace,
     onConnectWorkspace: handleSidebarConnectWorkspace,
     onToggleWorkspaceCollapse: handleSidebarToggleWorkspaceCollapse,
@@ -1816,6 +1819,16 @@ function MainApp() {
     loadOlderThreadsForWorkspace,
     listThreadsForWorkspace,
   });
+
+  const handleSidebarSelectHome = useCallback(() => {
+    setHomeSection("projects");
+    handleSidebarSelectHomeRaw();
+  }, [handleSidebarSelectHomeRaw]);
+
+  const handleSidebarSelectSupervisor = useCallback(() => {
+    setHomeSection("supervisor");
+    handleSidebarSelectHomeRaw();
+  }, [handleSidebarSelectHomeRaw]);
 
   useArchiveShortcut({
     isEnabled: isThreadOpen,
@@ -1945,7 +1958,9 @@ function MainApp() {
     onOpenDebug: handleDebugClick,
     showDebugButton,
     onAddWorkspace: handleAddWorkspace,
+    homeSection,
     onSelectHome: handleSidebarSelectHome,
+    onSelectSupervisor: handleSidebarSelectSupervisor,
     onSelectWorkspace: handleSidebarSelectWorkspace,
     onConnectWorkspace: handleSidebarConnectWorkspace,
     onAddAgent: handleAddAgent,
@@ -2061,6 +2076,7 @@ function MainApp() {
     activeTab,
     onSelectTab: (tab) => {
       if (tab === "home") {
+        setHomeSection("projects");
         resetPullRequestSelection();
         clearDraftState();
         selectHome();

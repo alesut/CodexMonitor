@@ -94,6 +94,8 @@ export type ComposerContextAction = {
   onSelect: () => void | Promise<void>;
 };
 
+export type HomeSection = "projects" | "supervisor";
+
 export type LayoutNodesOptions = {
   workspaces: WorkspaceInfo[];
   groupedWorkspaces: Array<{
@@ -154,7 +156,9 @@ export type LayoutNodesOptions = {
   onOpenDebug: () => void;
   showDebugButton: boolean;
   onAddWorkspace: () => void;
+  homeSection: HomeSection;
   onSelectHome: () => void;
+  onSelectSupervisor: () => void;
   onSelectWorkspace: (workspaceId: string) => void;
   onConnectWorkspace: (workspace: WorkspaceInfo) => Promise<void>;
   onAddAgent: (workspace: WorkspaceInfo) => Promise<void>;
