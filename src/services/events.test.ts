@@ -7,6 +7,7 @@ import {
   subscribeMenuCycleCollaborationMode,
   subscribeMenuCycleModel,
   subscribeMenuNewAgent,
+  subscribeSupervisorEvents,
   subscribeTerminalOutput,
 } from "./events";
 
@@ -46,6 +47,62 @@ describe("events subscriptions", () => {
     cleanup();
     await Promise.resolve();
     expect(unlisten).toHaveBeenCalledTimes(1);
+  });
+
+  it("fans out only supervisor-relevant app-server events", async () => {
+    let listener: EventCallback<AppServerEvent> = () => {};
+    const unlisten = vi.fn();
+
+    vi.mocked(listen).mockImplementation((_event, handler) => {
+      listener = handler as EventCallback<AppServerEvent>;
+      return Promise.resolve(unlisten);
+    });
+
+    const onEvent = vi.fn();
+    const cleanup = subscribeSupervisorEvents(onEvent);
+
+    listener({
+      event: "app-server-event",
+      id: 1,
+      payload: {
+        workspace_id: "ws-1",
+        message: { method: "turn/started" },
+      },
+    });
+    listener({
+      event: "app-server-event",
+      id: 2,
+      payload: {
+        workspace_id: "ws-1",
+        message: { method: "thread/live_attached" },
+      },
+    });
+    listener({
+      event: "app-server-event",
+      id: 3,
+      payload: {
+        workspace_id: "ws-1",
+        message: { method: "workspace/requestApproval" },
+      },
+    });
+
+    expect(onEvent).toHaveBeenCalledTimes(2);
+    expect(onEvent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        workspace_id: "ws-1",
+        message: expect.objectContaining({ method: "turn/started" }),
+      }),
+    );
+    expect(onEvent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        workspace_id: "ws-1",
+        message: expect.objectContaining({ method: "workspace/requestApproval" }),
+      }),
+    );
+
+    cleanup();
   });
 
   it("cleans up listeners that resolve after unsubscribe", async () => {

@@ -159,6 +159,161 @@ export type DeleteAgentInput = {
   deleteManagedFile?: boolean;
 };
 
+export const SUPERVISOR_ACTION_CONTRACT_VERSION = "supervisor.dispatch.v1";
+
+export type SupervisorHealth = "healthy" | "stale" | "disconnected";
+export type SupervisorThreadStatus =
+  | "idle"
+  | "running"
+  | "waiting_input"
+  | "failed"
+  | "completed"
+  | "stalled";
+export type SupervisorJobStatus = "pending" | "running" | "completed" | "failed";
+export type SupervisorSignalKind =
+  | "needs_approval"
+  | "failed"
+  | "completed"
+  | "stalled"
+  | "disconnected";
+export type SupervisorDispatchStatus = "dispatched" | "failed";
+
+export type SupervisorWorkspaceState = {
+  id: string;
+  name: string;
+  connected: boolean;
+  current_task: string | null;
+  last_activity_at_ms: number | null;
+  next_expected_step: string | null;
+  blockers: string[];
+  health: SupervisorHealth;
+  active_thread_id: string | null;
+};
+
+export type SupervisorThreadState = {
+  id: string;
+  workspace_id: string;
+  name: string | null;
+  status: SupervisorThreadStatus;
+  current_task: string | null;
+  last_activity_at_ms: number | null;
+  next_expected_step: string | null;
+  blockers: string[];
+  active_turn_id: string | null;
+};
+
+export type SupervisorJobState = {
+  id: string;
+  workspace_id: string;
+  thread_id: string | null;
+  dedupe_key: string | null;
+  description: string;
+  status: SupervisorJobStatus;
+  requested_at_ms: number;
+  started_at_ms: number | null;
+  completed_at_ms: number | null;
+  error: string | null;
+};
+
+export type SupervisorSignal = {
+  id: string;
+  kind: SupervisorSignalKind;
+  workspace_id: string | null;
+  thread_id: string | null;
+  job_id: string | null;
+  message: string;
+  created_at_ms: number;
+  acknowledged_at_ms: number | null;
+  context: unknown;
+};
+
+export type SupervisorActivityEntry = {
+  id: string;
+  kind: string;
+  message: string;
+  created_at_ms: number;
+  workspace_id: string | null;
+  thread_id: string | null;
+  needs_input: boolean;
+  metadata: unknown;
+};
+
+export type SupervisorOpenQuestion = {
+  id: string;
+  workspace_id: string;
+  thread_id: string;
+  question: string;
+  created_at_ms: number;
+  resolved_at_ms: number | null;
+  context: unknown;
+};
+
+export type SupervisorPendingApproval = {
+  request_key: string;
+  workspace_id: string;
+  thread_id: string | null;
+  turn_id: string | null;
+  item_id: string | null;
+  request_id: string;
+  method: string;
+  params: unknown;
+  created_at_ms: number;
+  resolved_at_ms: number | null;
+};
+
+export type SupervisorSnapshot = {
+  workspaces: Record<string, SupervisorWorkspaceState>;
+  threads: Record<string, SupervisorThreadState>;
+  jobs: Record<string, SupervisorJobState>;
+  signals: SupervisorSignal[];
+  activity_feed: SupervisorActivityEntry[];
+  open_questions: Record<string, SupervisorOpenQuestion>;
+  pending_approvals: Record<string, SupervisorPendingApproval>;
+};
+
+export type SupervisorFeedResponse = {
+  items: SupervisorActivityEntry[];
+  total: number;
+};
+
+export type SupervisorDispatchTurnAction = {
+  type: "dispatch_turn";
+  action_id: string;
+  workspace_id: string;
+  prompt: string;
+  thread_id?: string | null;
+  dedupe_key?: string | null;
+};
+
+export type SupervisorActionContract = {
+  version: string;
+  actions: SupervisorDispatchTurnAction[];
+};
+
+export function createSupervisorActionContract(
+  actions: SupervisorDispatchTurnAction[],
+): SupervisorActionContract {
+  return {
+    version: SUPERVISOR_ACTION_CONTRACT_VERSION,
+    actions,
+  };
+}
+
+export type SupervisorDispatchResult = {
+  action_id: string;
+  workspace_id: string;
+  dedupe_key: string;
+  status: SupervisorDispatchStatus;
+  thread_id: string | null;
+  turn_id: string | null;
+  error: string | null;
+  idempotent_replay: boolean;
+};
+
+export type SupervisorDispatchResponse = {
+  results: SupervisorDispatchResult[];
+};
+
 type FileScope = "workspace" | "global";
 type FileKind = "agents" | "config";
 
@@ -350,6 +505,30 @@ export async function getOpenAppIcon(appName: string): Promise<string | null> {
 
 export async function connectWorkspace(id: string): Promise<void> {
   return invoke("connect_workspace", { id });
+}
+
+export async function getSupervisorSnapshot(): Promise<SupervisorSnapshot> {
+  return invoke<SupervisorSnapshot>("supervisor_snapshot");
+}
+
+export async function getSupervisorFeed(options?: {
+  limit?: number;
+  needsInputOnly?: boolean;
+}): Promise<SupervisorFeedResponse> {
+  return invoke<SupervisorFeedResponse>("supervisor_feed", {
+    limit: options?.limit ?? null,
+    needsInputOnly: options?.needsInputOnly ?? false,
+  });
+}
+
+export async function dispatchSupervisor(
+  contract: SupervisorActionContract,
+): Promise<SupervisorDispatchResponse> {
+  return invoke<SupervisorDispatchResponse>("supervisor_dispatch", { contract });
+}
+
+export async function ackSupervisorSignal(signalId: string): Promise<{ ok: boolean }> {
+  return invoke<{ ok: boolean }>("supervisor_ack_signal", { signalId });
 }
 
 export async function startThread(workspaceId: string) {

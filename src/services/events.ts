@@ -20,6 +20,30 @@ type SubscriptionOptions = {
 
 type Listener<T> = (payload: T) => void;
 
+const SUPERVISOR_METHODS = new Set<string>([
+  "turn/started",
+  "turn/completed",
+  "item/started",
+  "item/completed",
+  "error",
+  "codex/connected",
+]);
+
+export type SupervisorAppServerEvent = AppServerEvent & {
+  message: Record<string, unknown> & { method: string };
+};
+
+export function isSupervisorAppServerEvent(
+  event: AppServerEvent,
+): event is SupervisorAppServerEvent {
+  const message = event.message as Record<string, unknown> | null | undefined;
+  const method = typeof message?.method === "string" ? message.method.trim() : "";
+  if (!method) {
+    return false;
+  }
+  return SUPERVISOR_METHODS.has(method) || method.endsWith("requestApproval");
+}
+
 function createEventHub<T>(eventName: string) {
   const listeners = new Set<Listener<T>>();
   let unlisten: Unsubscribe | null = null;
@@ -116,6 +140,18 @@ export function subscribeAppServerEvents(
   options?: SubscriptionOptions,
 ): Unsubscribe {
   return appServerHub.subscribe(onEvent, options);
+}
+
+export function subscribeSupervisorEvents(
+  onEvent: (event: SupervisorAppServerEvent) => void,
+  options?: SubscriptionOptions,
+): Unsubscribe {
+  return subscribeAppServerEvents((event) => {
+    if (!isSupervisorAppServerEvent(event)) {
+      return;
+    }
+    onEvent(event);
+  }, options);
 }
 
 export function subscribeDictationDownload(
