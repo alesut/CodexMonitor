@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+#[path = "supervisor_core/events.rs"]
+pub(crate) mod events;
+
 pub(crate) const DEFAULT_ACTIVITY_FEED_LIMIT: usize = 200;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -283,7 +286,9 @@ pub(crate) fn apply_update(state: &mut SupervisorState, update: SupervisorStateU
             workspace_id,
             thread_id,
         } => {
-            state.threads.remove(&thread_map_key(&workspace_id, &thread_id));
+            state
+                .threads
+                .remove(&thread_map_key(&workspace_id, &thread_id));
             state.jobs.retain(|_, job| {
                 !(job.workspace_id == workspace_id
                     && job.thread_id.as_deref() == Some(thread_id.as_str()))
@@ -341,7 +346,10 @@ pub(crate) fn apply_update(state: &mut SupervisorState, update: SupervisorStateU
             }
         }
         SupervisorStateUpdate::PushActivity { entry, max_items } => {
-            if let Some(existing_idx) = state.activity_feed.iter().position(|item| item.id == entry.id)
+            if let Some(existing_idx) = state
+                .activity_feed
+                .iter()
+                .position(|item| item.id == entry.id)
             {
                 state.activity_feed.remove(existing_idx);
             }
