@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+#[path = "supervisor_core/dispatch.rs"]
+pub(crate) mod dispatch;
 #[path = "supervisor_core/events.rs"]
 pub(crate) mod events;
 #[path = "supervisor_core/loop.rs"]
