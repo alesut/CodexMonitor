@@ -67,7 +67,7 @@ use std::env;
 use std::fs::File;
 use std::io::Read;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -99,6 +99,18 @@ const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:4732";
 const MAX_IN_FLIGHT_RPC_PER_CONNECTION: usize = 32;
 const DAEMON_NAME: &str = "codex-monitor-daemon";
 
+fn load_supervisor_loop(data_dir: &Path) -> Arc<Mutex<SupervisorLoop>> {
+    let state_path = supervisor_service::supervisor_state_path(data_dir);
+    let restored_state = supervisor_service::read_supervisor_state(&state_path).unwrap_or_else(|error| {
+        eprintln!("failed to read supervisor state {}: {error}", state_path.display());
+        Default::default()
+    });
+    Arc::new(Mutex::new(SupervisorLoop::from_state(
+        SupervisorLoopConfig::default(),
+        restored_state,
+    )))
+}
+
 fn spawn_with_client(
     event_sink: DaemonEventSink,
     client_version: String,
@@ -121,6 +133,7 @@ fn spawn_with_client(
 struct DaemonEventSink {
     tx: broadcast::Sender<DaemonEvent>,
     supervisor_loop: Arc<Mutex<SupervisorLoop>>,
+    supervisor_state_path: PathBuf,
 }
 
 #[derive(Clone)]
@@ -135,6 +148,7 @@ enum DaemonEvent {
 impl EventSink for DaemonEventSink {
     fn emit_app_server_event(&self, event: AppServerEvent) {
         let supervisor_loop = Arc::clone(&self.supervisor_loop);
+        let supervisor_state_path = self.supervisor_state_path.clone();
         let workspace_id = event.workspace_id.clone();
         let message = event.message.clone();
         tokio::spawn(async move {
@@ -144,6 +158,9 @@ impl EventSink for DaemonEventSink {
                 &message,
                 supervisor_loop::now_timestamp_ms(),
             );
+            let snapshot = supervisor_loop.snapshot();
+            drop(supervisor_loop);
+            let _ = supervisor_service::write_supervisor_state(&supervisor_state_path, &snapshot);
         });
         let _ = self.tx.send(DaemonEvent::AppServer(event));
     }
@@ -169,6 +186,7 @@ struct DaemonState {
     sessions: Mutex<HashMap<String, Arc<WorkspaceSession>>>,
     supervisor_loop: Arc<Mutex<SupervisorLoop>>,
     supervisor_dispatch_executor: Arc<Mutex<SupervisorDispatchExecutor>>,
+    supervisor_state_path: PathBuf,
     storage_path: PathBuf,
     settings_path: PathBuf,
     app_settings: Mutex<AppSettings>,
@@ -192,6 +210,7 @@ impl DaemonState {
     ) -> Self {
         let storage_path = config.data_dir.join("workspaces.json");
         let settings_path = config.data_dir.join("settings.json");
+        let supervisor_state_path = supervisor_service::supervisor_state_path(&config.data_dir);
         let workspaces = read_workspaces(&storage_path).unwrap_or_default();
         let app_settings = read_settings(&settings_path).unwrap_or_default();
         let daemon_binary_path = std::env::current_exe()
@@ -203,6 +222,7 @@ impl DaemonState {
             sessions: Mutex::new(HashMap::new()),
             supervisor_loop,
             supervisor_dispatch_executor,
+            supervisor_state_path,
             storage_path,
             settings_path,
             app_settings: Mutex::new(app_settings),
@@ -908,6 +928,11 @@ impl DaemonState {
             &contract,
         )
         .await?;
+        supervisor_service::persist_supervisor_snapshot(
+            &self.supervisor_loop,
+            &self.supervisor_state_path,
+        )
+        .await?;
         serde_json::to_value(response).map_err(|error| error.to_string())
     }
 
@@ -916,6 +941,11 @@ impl DaemonState {
             &self.supervisor_loop,
             signal_id.as_str(),
             supervisor_loop::now_timestamp_ms(),
+        )
+        .await?;
+        supervisor_service::persist_supervisor_snapshot(
+            &self.supervisor_loop,
+            &self.supervisor_state_path,
         )
         .await?;
         Ok(json!({ "ok": true }))
@@ -1570,6 +1600,7 @@ mod tests {
 
     fn test_state(data_dir: &std::path::Path) -> DaemonState {
         let (tx, _rx) = broadcast::channel::<DaemonEvent>(32);
+        let supervisor_state_path = supervisor_service::supervisor_state_path(data_dir);
         let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
             SupervisorLoopConfig::default(),
         )));
@@ -1580,12 +1611,14 @@ mod tests {
             sessions: Mutex::new(HashMap::new()),
             supervisor_loop: Arc::clone(&supervisor_loop),
             supervisor_dispatch_executor,
+            supervisor_state_path: supervisor_state_path.clone(),
             storage_path: data_dir.join("workspaces.json"),
             settings_path: data_dir.join("settings.json"),
             app_settings: Mutex::new(AppSettings::default()),
             event_sink: DaemonEventSink {
                 tx,
                 supervisor_loop,
+                supervisor_state_path,
             },
             codex_login_cancels: Mutex::new(HashMap::new()),
             daemon_binary_path: Some("/tmp/codex-monitor-daemon".to_string()),
@@ -1723,6 +1756,32 @@ mod tests {
             let _ = std::fs::remove_dir_all(&tmp);
         });
     }
+
+    #[test]
+    fn load_supervisor_loop_restores_persisted_state() {
+        run_async_test(async {
+            let tmp = make_temp_dir("supervisor-restore");
+            let state_path = supervisor_service::supervisor_state_path(&tmp);
+            let mut persisted = shared::supervisor_core::SupervisorState::default();
+            persisted.workspaces.insert(
+                "ws-restored".to_string(),
+                shared::supervisor_core::SupervisorWorkspaceState {
+                    id: "ws-restored".to_string(),
+                    name: "Restored Workspace".to_string(),
+                    connected: true,
+                    ..Default::default()
+                },
+            );
+            supervisor_service::write_supervisor_state(&state_path, &persisted)
+                .expect("persist supervisor state");
+
+            let restored_loop = load_supervisor_loop(&tmp);
+            let snapshot = supervisor_service::supervisor_snapshot_core(&restored_loop).await;
+            assert!(snapshot.workspaces.contains_key("ws-restored"));
+
+            let _ = std::fs::remove_dir_all(&tmp);
+        });
+    }
 }
 
 fn main() {
@@ -1741,13 +1800,13 @@ fn main() {
 
     runtime.block_on(async move {
         let (events_tx, _events_rx) = broadcast::channel::<DaemonEvent>(2048);
-        let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
-            SupervisorLoopConfig::default(),
-        )));
+        let supervisor_loop = load_supervisor_loop(&config.data_dir);
+        let supervisor_state_path = supervisor_service::supervisor_state_path(&config.data_dir);
         let supervisor_dispatch_executor = Arc::new(Mutex::new(SupervisorDispatchExecutor::new()));
         let event_sink = DaemonEventSink {
             tx: events_tx.clone(),
             supervisor_loop: Arc::clone(&supervisor_loop),
+            supervisor_state_path: supervisor_state_path.clone(),
         };
         let state = Arc::new(DaemonState::load(
             &config,
@@ -1768,6 +1827,14 @@ fn main() {
                         supervisor_loop::now_timestamp_ms(),
                     )
                     .await;
+                    if let Err(error) = supervisor_service::persist_supervisor_snapshot(
+                        &state.supervisor_loop,
+                        &state.supervisor_state_path,
+                    )
+                    .await
+                    {
+                        eprintln!("failed to persist supervisor state: {error}");
+                    }
                     tokio::time::sleep(interval).await;
                 }
             });

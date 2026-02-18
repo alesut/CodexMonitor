@@ -125,3 +125,29 @@ npm run typecheck
 npm run test -- src/services/tauri.test.ts src/features/settings/components/SettingsView.test.tsx
 cd src-tauri && cargo check
 ```
+
+## Supervisor Persistence/Parity Check
+
+When touching Supervisor behavior, keep app/daemon contract parity and daemon restore semantics aligned:
+
+1. Shared logic first:
+- `src-tauri/src/shared/supervisor_core.rs`
+- `src-tauri/src/shared/supervisor_core/*`
+
+2. Surfaces second:
+- App commands: `src-tauri/src/lib.rs`, `src-tauri/src/supervisor.rs`
+- Daemon RPC: `src-tauri/src/bin/codex_monitor_daemon/rpc.rs`, `src-tauri/src/bin/codex_monitor_daemon/rpc/supervisor.rs`
+- Frontend IPC/events: `src/services/tauri.ts`, `src/services/events.ts`
+
+3. Persistence path (daemon mode):
+- `<app-data-dir>/supervisor-state.json`
+- Read/write helpers: `src-tauri/src/shared/supervisor_core/service.rs`
+
+4. Minimum validation when Supervisor files change:
+
+```bash
+npm run typecheck
+npm run test -- src/features/supervisor/components/SupervisorHome.test.tsx src/features/supervisor/hooks/useSupervisorSignalAlerts.test.tsx
+cd src-tauri && cargo test supervisor_core
+cd src-tauri && cargo check
+```

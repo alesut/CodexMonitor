@@ -34,6 +34,7 @@ If a behavior must work in both app and daemon, implement it in `src-tauri/src/s
 | Change Git/GitHub backend behavior | `src/features/git/hooks/*`, `src/services/tauri.ts`, `src-tauri/src/git/mod.rs`, `src-tauri/src/shared/git_ui_core.rs`, `src-tauri/src/shared/git_ui_core/*`, `src-tauri/src/shared/git_core.rs`, `src-tauri/src/bin/codex_monitor_daemon/rpc.rs`, `src-tauri/src/bin/codex_monitor_daemon/rpc/git.rs` |
 | Change prompts CRUD/listing behavior | `src/features/prompts/hooks/useCustomPrompts.ts`, `src/features/prompts/components/PromptPanel.tsx`, `src/services/tauri.ts`, `src-tauri/src/prompts.rs`, `src-tauri/src/shared/prompts_core.rs`, `src-tauri/src/bin/codex_monitor_daemon/rpc.rs` |
 | Change file read/write for Agents/config | `src/services/tauri.ts`, `src-tauri/src/files/mod.rs`, `src-tauri/src/shared/files_core.rs`, `src-tauri/src/bin/codex_monitor_daemon/rpc.rs` |
+| Build/extend Supervisor operations UI and alerts | `src/features/supervisor/components/*`, `src/features/supervisor/hooks/*`, `src/features/app/components/SidebarHeader.tsx`, `src/services/tauri.ts`, `src/services/events.ts` |
 | Add/change daemon JSON-RPC surface | `src-tauri/src/bin/codex_monitor_daemon/rpc.rs`, `src-tauri/src/bin/codex_monitor_daemon/rpc/*`, `src-tauri/src/bin/codex_monitor_daemon.rs`, matching shared core |
 
 ## Frontend Navigation
@@ -107,6 +108,7 @@ Use TS/Vite aliases for refactor-safe imports:
 - Daemon JSON-RPC dispatcher/router: `src-tauri/src/bin/codex_monitor_daemon/rpc.rs`
 - Daemon domain handlers: `src-tauri/src/bin/codex_monitor_daemon/rpc/*`
 - Daemon transport: `src-tauri/src/bin/codex_monitor_daemon/transport.rs`
+- Supervisor state persistence file (daemon mode): `<app-data-dir>/supervisor-state.json` via `src-tauri/src/shared/supervisor_core/service.rs`
 
 When adding a new method, keep method names and payload shape aligned with `src/services/tauri.ts` and app commands in `src-tauri/src/lib.rs`.
 
@@ -123,6 +125,7 @@ All cross-runtime domain behavior belongs in `src-tauri/src/shared/*`:
 - Git and GitHub logic: `src-tauri/src/shared/git_core.rs`, `src-tauri/src/shared/git_ui_core.rs`, `src-tauri/src/shared/git_ui_core/*`
 - Prompts CRUD/listing: `src-tauri/src/shared/prompts_core.rs`
 - Usage snapshot and aggregation: `src-tauri/src/shared/local_usage_core.rs`
+- Supervisor state/events/dispatch/contract/persistence: `src-tauri/src/shared/supervisor_core.rs`, `src-tauri/src/shared/supervisor_core/*`
 - Process helpers: `src-tauri/src/shared/process_core.rs`
 
 ## Events Map (Backend -> Frontend)

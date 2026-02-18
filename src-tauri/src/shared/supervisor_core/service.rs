@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,7 @@ use super::{SupervisorActivityEntry, SupervisorState};
 
 const SUPERVISOR_FEED_DEFAULT_LIMIT: usize = 100;
 const SUPERVISOR_FEED_MAX_LIMIT: usize = 1000;
+const SUPERVISOR_STATE_FILE_NAME: &str = "supervisor-state.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct SupervisorFeedResponse {
@@ -50,6 +52,37 @@ pub(crate) async fn supervisor_feed_core(
     items.truncate(limit);
 
     SupervisorFeedResponse { items, total }
+}
+
+pub(crate) fn supervisor_state_path(data_dir: &Path) -> PathBuf {
+    data_dir.join(SUPERVISOR_STATE_FILE_NAME)
+}
+
+pub(crate) fn read_supervisor_state(path: &PathBuf) -> Result<SupervisorState, String> {
+    if !path.exists() {
+        return Ok(SupervisorState::default());
+    }
+    let data = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
+    serde_json::from_str(&data).map_err(|error| error.to_string())
+}
+
+pub(crate) fn write_supervisor_state(
+    path: &PathBuf,
+    state: &SupervisorState,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let data = serde_json::to_string_pretty(state).map_err(|error| error.to_string())?;
+    std::fs::write(path, data).map_err(|error| error.to_string())
+}
+
+pub(crate) async fn persist_supervisor_snapshot(
+    supervisor_loop: &Arc<Mutex<SupervisorLoop>>,
+    path: &PathBuf,
+) -> Result<(), String> {
+    let snapshot = supervisor_snapshot_core(supervisor_loop).await;
+    write_supervisor_state(path, &snapshot)
 }
 
 pub(crate) async fn supervisor_ack_signal_core(
@@ -272,6 +305,71 @@ mod tests {
                 .await
                 .expect_err("unknown signal should fail");
             assert_eq!(error, "signal `unknown` not found");
+        });
+    }
+
+    #[test]
+    fn supervisor_state_roundtrip_persists_to_disk() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "codex-monitor-supervisor-state-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let path = supervisor_state_path(&temp_dir);
+
+        let mut state = SupervisorState::default();
+        state.workspaces.insert(
+            "ws-restore".to_string(),
+            crate::shared::supervisor_core::SupervisorWorkspaceState {
+                id: "ws-restore".to_string(),
+                name: "Restore Workspace".to_string(),
+                connected: true,
+                ..Default::default()
+            },
+        );
+
+        write_supervisor_state(&path, &state).expect("write supervisor state");
+        let restored = read_supervisor_state(&path).expect("read supervisor state");
+        assert_eq!(restored.workspaces.len(), 1);
+        assert!(restored.workspaces.contains_key("ws-restore"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn persist_supervisor_snapshot_writes_latest_snapshot() {
+        run_async(async {
+            let temp_dir = std::env::temp_dir().join(format!(
+                "codex-monitor-supervisor-persist-{}",
+                uuid::Uuid::new_v4()
+            ));
+            let path = supervisor_state_path(&temp_dir);
+            let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
+                SupervisorLoopConfig::default(),
+            )));
+
+            {
+                let mut loop_state = supervisor_loop.lock().await;
+                loop_state.apply_app_server_event(
+                    "ws-1",
+                    &json!({
+                        "method": "turn/started",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turnId": "turn-1",
+                        }
+                    }),
+                    100,
+                );
+            }
+
+            persist_supervisor_snapshot(&supervisor_loop, &path)
+                .await
+                .expect("persist snapshot");
+            let restored = read_supervisor_state(&path).expect("read state from disk");
+            assert!(restored.workspaces.contains_key("ws-1"));
+            assert!(restored.threads.contains_key("ws-1:thread-1"));
+
+            let _ = std::fs::remove_dir_all(&temp_dir);
         });
     }
 }
