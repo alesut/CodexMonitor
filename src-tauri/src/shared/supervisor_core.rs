@@ -6,6 +6,8 @@ use std::collections::BTreeMap;
 pub(crate) mod dispatch;
 #[path = "supervisor_core/events.rs"]
 pub(crate) mod events;
+#[path = "supervisor_core/contract.rs"]
+pub(crate) mod contract;
 #[path = "supervisor_core/loop.rs"]
 pub(crate) mod supervisor_loop;
 
