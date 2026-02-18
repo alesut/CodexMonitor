@@ -1,12 +1,17 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SupervisorHome } from "./SupervisorHome";
-import { ackSupervisorSignal, getSupervisorSnapshot } from "@services/tauri";
+import {
+  ackSupervisorSignal,
+  getSupervisorFeed,
+  getSupervisorSnapshot,
+} from "@services/tauri";
 import { subscribeSupervisorEvents } from "@services/events";
 
 vi.mock("@services/tauri", () => ({
   getSupervisorSnapshot: vi.fn(),
+  getSupervisorFeed: vi.fn(),
   ackSupervisorSignal: vi.fn(),
 }));
 
@@ -64,9 +69,32 @@ function cloneSnapshot() {
   return JSON.parse(JSON.stringify(snapshotFixture));
 }
 
+function cloneFeed() {
+  return {
+    items: [
+      {
+        id: "activity-1",
+        kind: "turn/completed",
+        message: "Deployment run completed",
+        created_at_ms: Date.now(),
+        workspace_id: "ws-1",
+        thread_id: "thread-1",
+        needs_input: true,
+        metadata: null,
+      },
+    ],
+    total: 1,
+  };
+}
+
 describe("SupervisorHome", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     vi.mocked(getSupervisorSnapshot).mockResolvedValue(cloneSnapshot());
+    vi.mocked(getSupervisorFeed).mockResolvedValue(cloneFeed());
     vi.mocked(ackSupervisorSignal).mockResolvedValue({ ok: true });
     vi.mocked(subscribeSupervisorEvents).mockImplementation(() => () => {});
   });
@@ -77,8 +105,13 @@ describe("SupervisorHome", () => {
     expect(await screen.findByText("Supervisor")).toBeTruthy();
     expect(await screen.findByText("Workspace Alpha")).toBeTruthy();
     expect(await screen.findByText("Approval required for deployment")).toBeTruthy();
+    expect(await screen.findByText("Deployment run completed")).toBeTruthy();
     expect(screen.getByText("Workspaces")).toBeTruthy();
     expect(vi.mocked(getSupervisorSnapshot)).toHaveBeenCalled();
+    expect(vi.mocked(getSupervisorFeed)).toHaveBeenCalledWith({
+      limit: 80,
+      needsInputOnly: false,
+    });
   });
 
   it("acknowledges signal and refreshes snapshot", async () => {
@@ -96,6 +129,22 @@ describe("SupervisorHome", () => {
     await waitFor(() => {
       expect(ackSupervisorSignal).toHaveBeenCalledWith("signal-1");
       expect(getSupervisorSnapshot).toHaveBeenCalledTimes(2);
+      expect(getSupervisorFeed).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("filters feed to only needs-input entries", async () => {
+    render(<SupervisorHome />);
+    await screen.findByText("Deployment run completed");
+
+    const filterButton = screen.getByRole("button", { name: "Needs my input" });
+    fireEvent.click(filterButton);
+
+    await waitFor(() => {
+      expect(getSupervisorFeed).toHaveBeenLastCalledWith({
+        limit: 80,
+        needsInputOnly: true,
+      });
     });
   });
 });

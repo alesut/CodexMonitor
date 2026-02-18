@@ -1,13 +1,6 @@
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { subscribeSupervisorEvents } from "@services/events";
-import {
-  ackSupervisorSignal,
-  getSupervisorSnapshot,
-  type SupervisorSignal,
-  type SupervisorSnapshot,
-} from "@services/tauri";
 import { formatRelativeTime } from "../../../utils/time";
+import { useSupervisorOperations } from "../hooks/useSupervisorOperations";
 
 function formatSupervisorTime(value: number | null) {
   if (value === null) {
@@ -17,92 +10,27 @@ function formatSupervisorTime(value: number | null) {
 }
 
 export function SupervisorHome() {
-  const [snapshot, setSnapshot] = useState<SupervisorSnapshot | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [ackError, setAckError] = useState<string | null>(null);
-  const [ackingSignalId, setAckingSignalId] = useState<string | null>(null);
-  const isMountedRef = useRef(true);
-
-  const loadSnapshot = useCallback(async (showRefreshing: boolean) => {
-    if (!showRefreshing) {
-      setIsLoading(true);
-    } else {
-      setIsRefreshing(true);
-    }
-    setLoadError(null);
-    try {
-      const next = await getSupervisorSnapshot();
-      if (!isMountedRef.current) {
-        return;
-      }
-      setSnapshot(next);
-    } catch (error) {
-      if (!isMountedRef.current) {
-        return;
-      }
-      setLoadError(error instanceof Error ? error.message : "Failed to load supervisor snapshot.");
-    } finally {
-      if (!isMountedRef.current) {
-        return;
-      }
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    void loadSnapshot(false);
-
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const unsubscribe = subscribeSupervisorEvents(() => {
-      if (refreshTimer !== null) {
-        return;
-      }
-      refreshTimer = setTimeout(() => {
-        refreshTimer = null;
-        void loadSnapshot(true);
-      }, 250);
-    });
-
-    return () => {
-      isMountedRef.current = false;
-      unsubscribe();
-      if (refreshTimer !== null) {
-        clearTimeout(refreshTimer);
-      }
-    };
-  }, [loadSnapshot]);
-
-  const workspaceList = useMemo(
-    () => Object.values(snapshot?.workspaces ?? {}),
-    [snapshot],
-  );
-  const threadList = useMemo(() => Object.values(snapshot?.threads ?? {}), [snapshot]);
-  const jobList = useMemo(() => Object.values(snapshot?.jobs ?? {}), [snapshot]);
-  const signalList = snapshot?.signals ?? [];
-  const pendingSignals = signalList.filter((signal) => signal.acknowledged_at_ms === null);
-  const activityFeed = snapshot?.activity_feed ?? [];
-  const openQuestionsCount = Object.keys(snapshot?.open_questions ?? {}).length;
-  const pendingApprovalsCount = Object.keys(snapshot?.pending_approvals ?? {}).length;
-
-  const handleAckSignal = useCallback(
-    async (signal: SupervisorSignal) => {
-      setAckError(null);
-      setAckingSignalId(signal.id);
-      try {
-        await ackSupervisorSignal(signal.id);
-        await loadSnapshot(true);
-      } catch (error) {
-        setAckError(error instanceof Error ? error.message : "Failed to acknowledge signal.");
-      } finally {
-        setAckingSignalId(null);
-      }
-    },
-    [loadSnapshot],
-  );
+  const {
+    workspaceList,
+    threadList,
+    jobList,
+    signalList,
+    pendingSignals,
+    feedItems,
+    feedTotal,
+    openQuestionsCount,
+    pendingApprovalsCount,
+    activityNeedsInputCount,
+    needsInputOnly,
+    setNeedsInputOnly,
+    isLoading,
+    isRefreshing,
+    loadError,
+    ackError,
+    ackingSignalId,
+    refresh,
+    acknowledgeSignal,
+  } = useSupervisorOperations();
 
   return (
     <div className="supervisor-home">
@@ -110,14 +38,14 @@ export function SupervisorHome() {
         <div>
           <h1 className="supervisor-home-title">Supervisor</h1>
           <p className="supervisor-home-subtitle">
-            Global operations view across all workspaces and threads.
+            Live operations state across workspaces, threads, and dispatch jobs.
           </p>
         </div>
         <button
           type="button"
           className="supervisor-home-refresh"
           onClick={() => {
-            void loadSnapshot(true);
+            void refresh("manual");
           }}
           disabled={isLoading || isRefreshing}
           aria-label="Refresh supervisor snapshot"
@@ -137,12 +65,16 @@ export function SupervisorHome() {
           <strong>{threadList.length}</strong>
         </div>
         <div className="supervisor-kpi">
-          <span className="supervisor-kpi-label">Jobs</span>
+          <span className="supervisor-kpi-label">Dispatch jobs</span>
           <strong>{jobList.length}</strong>
         </div>
         <div className="supervisor-kpi">
+          <span className="supervisor-kpi-label">Pending signals</span>
+          <strong>{pendingSignals.length}</strong>
+        </div>
+        <div className="supervisor-kpi">
           <span className="supervisor-kpi-label">Needs input</span>
-          <strong>{activityFeed.filter((entry) => entry.needs_input).length}</strong>
+          <strong>{activityNeedsInputCount}</strong>
         </div>
         <div className="supervisor-kpi">
           <span className="supervisor-kpi-label">Approvals</span>
@@ -156,7 +88,7 @@ export function SupervisorHome() {
 
       {loadError ? <div className="supervisor-home-error">{loadError}</div> : null}
       {ackError ? <div className="supervisor-home-error">{ackError}</div> : null}
-      {isLoading && !snapshot ? (
+      {isLoading && workspaceList.length === 0 ? (
         <div className="supervisor-home-empty">Loading supervisor snapshot...</div>
       ) : null}
 
@@ -204,6 +136,123 @@ export function SupervisorHome() {
 
         <section className="supervisor-section">
           <div className="supervisor-section-header">
+            <h2>Thread activity</h2>
+            <span>{threadList.length} total</span>
+          </div>
+          {threadList.length === 0 ? (
+            <p className="supervisor-home-empty">No active thread telemetry yet.</p>
+          ) : (
+            <ul className="supervisor-thread-list">
+              {threadList.map((thread) => (
+                <li key={thread.id} className="supervisor-thread-item">
+                  <div className="supervisor-thread-top">
+                    <span className="supervisor-thread-name">
+                      {thread.name?.trim() || `Thread ${thread.id}`}
+                    </span>
+                    <span className={`supervisor-thread-status is-${thread.status}`}>
+                      {thread.status}
+                    </span>
+                  </div>
+                  <div className="supervisor-thread-line">
+                    <strong>Task:</strong> {thread.current_task || "None"}
+                  </div>
+                  <div className="supervisor-thread-line">
+                    <strong>Next:</strong> {thread.next_expected_step || "Pending update"}
+                  </div>
+                  <div className="supervisor-thread-line">
+                    <strong>Last:</strong> {formatSupervisorTime(thread.last_activity_at_ms)}
+                  </div>
+                  <div className="supervisor-thread-line">
+                    <strong>Blockers:</strong>{" "}
+                    {thread.blockers.length > 0 ? thread.blockers.join(", ") : "none"}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="supervisor-section">
+          <div className="supervisor-section-header">
+            <h2>Dispatch jobs</h2>
+            <span>{jobList.length} tracked</span>
+          </div>
+          {jobList.length === 0 ? (
+            <p className="supervisor-home-empty">No jobs dispatched yet.</p>
+          ) : (
+            <ul className="supervisor-job-list">
+              {jobList.map((job) => (
+                <li key={job.id} className="supervisor-job-item">
+                  <div className="supervisor-job-top">
+                    <span className="supervisor-job-name">{job.description}</span>
+                    <span className={`supervisor-job-status is-${job.status}`}>
+                      {job.status}
+                    </span>
+                  </div>
+                  <div className="supervisor-job-meta">
+                    Workspace: {job.workspace_id} ·{" "}
+                    {job.thread_id ? `Thread ${job.thread_id}` : "Thread pending"}
+                  </div>
+                  {job.error ? (
+                    <div className="supervisor-job-error">Error: {job.error}</div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="supervisor-section">
+          <div className="supervisor-section-header">
+            <h2>Live activity feed</h2>
+            <span>{feedTotal} entries</span>
+          </div>
+          <div className="supervisor-feed-filter" role="group" aria-label="Feed filter">
+            <button
+              type="button"
+              className={`supervisor-feed-filter-button${!needsInputOnly ? " is-active" : ""}`}
+              onClick={() => setNeedsInputOnly(false)}
+            >
+              All activity
+            </button>
+            <button
+              type="button"
+              className={`supervisor-feed-filter-button${needsInputOnly ? " is-active" : ""}`}
+              onClick={() => setNeedsInputOnly(true)}
+            >
+              Needs my input
+            </button>
+          </div>
+          {feedItems.length === 0 ? (
+            <p className="supervisor-home-empty">No feed items for this filter.</p>
+          ) : (
+            <ul className="supervisor-feed-list">
+              {feedItems.map((entry) => (
+                <li key={entry.id} className="supervisor-feed-item">
+                  <div className="supervisor-feed-main">
+                    <span className="supervisor-feed-message">{entry.message}</span>
+                    <span className="supervisor-feed-time">
+                      {formatSupervisorTime(entry.created_at_ms)}
+                    </span>
+                  </div>
+                  <div className="supervisor-feed-meta">
+                    <span className="supervisor-feed-kind">{entry.kind}</span>
+                    <span>
+                      {entry.workspace_id ?? "global"}
+                      {entry.thread_id ? ` · ${entry.thread_id}` : ""}
+                    </span>
+                    {entry.needs_input ? (
+                      <span className="supervisor-feed-needs-input">Needs input</span>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="supervisor-section">
+          <div className="supervisor-section-header">
             <h2>Signals</h2>
             <span>{pendingSignals.length} pending</span>
           </div>
@@ -228,7 +277,7 @@ export function SupervisorHome() {
                           type="button"
                           className="supervisor-signal-ack"
                           onClick={() => {
-                            void handleAckSignal(signal);
+                            void acknowledgeSignal(signal);
                           }}
                           disabled={ackingSignalId === signal.id}
                         >

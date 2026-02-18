@@ -216,6 +216,140 @@
   color: var(--text-strong);
 }
 
+.supervisor-thread-list,
+.supervisor-job-list,
+.supervisor-feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.supervisor-thread-item,
+.supervisor-job-item,
+.supervisor-feed-item {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-item);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.supervisor-thread-top,
+.supervisor-job-top,
+.supervisor-feed-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.supervisor-thread-name,
+.supervisor-job-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.supervisor-thread-status,
+.supervisor-job-status {
+  font-size: 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  padding: 2px 8px;
+  text-transform: lowercase;
+  color: var(--text-muted);
+}
+
+.supervisor-thread-status.is-running,
+.supervisor-job-status.is-running {
+  color: var(--status-warning);
+  border-color: color-mix(in srgb, var(--status-warning) 36%, transparent);
+}
+
+.supervisor-thread-status.is-failed,
+.supervisor-job-status.is-failed {
+  color: var(--status-error);
+  border-color: color-mix(in srgb, var(--status-error) 42%, transparent);
+}
+
+.supervisor-thread-status.is-completed,
+.supervisor-job-status.is-completed {
+  color: var(--status-success);
+  border-color: color-mix(in srgb, var(--status-success) 38%, transparent);
+}
+
+.supervisor-thread-line,
+.supervisor-job-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.supervisor-job-error {
+  color: var(--status-error);
+  font-size: 12px;
+}
+
+.supervisor-feed-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.supervisor-feed-filter-button {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: var(--surface-card);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.supervisor-feed-filter-button.is-active {
+  color: var(--text-strong);
+  border-color: var(--border-strong);
+  background: var(--surface-active);
+}
+
+.supervisor-feed-main {
+  align-items: flex-start;
+}
+
+.supervisor-feed-message {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.supervisor-feed-time {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.supervisor-feed-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.supervisor-feed-kind {
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 2px 8px;
+  text-transform: lowercase;
+}
+
+.supervisor-feed-needs-input {
+  color: var(--status-warning);
+}
+
 .supervisor-signal-meta {
   display: flex;
   align-items: center;
