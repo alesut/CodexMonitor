@@ -122,6 +122,21 @@
   color: var(--text-strong);
 }
 
+.sidebar-title-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-error) 40%, transparent);
+}
+
 .sidebar-title-add {
   display: inline-flex;
   align-items: center;

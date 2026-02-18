@@ -157,6 +157,7 @@ export type LayoutNodesOptions = {
   showDebugButton: boolean;
   onAddWorkspace: () => void;
   homeSection: HomeSection;
+  supervisorPendingSignals: number;
   onSelectHome: () => void;
   onSelectSupervisor: () => void;
   onSelectWorkspace: (workspaceId: string) => void;

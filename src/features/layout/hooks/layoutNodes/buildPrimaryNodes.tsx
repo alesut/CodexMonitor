@@ -64,6 +64,7 @@ export function buildPrimaryNodes(options: LayoutNodesOptions): PrimaryLayoutNod
       showDebugButton={options.showDebugButton}
       onAddWorkspace={options.onAddWorkspace}
       homeSection={options.homeSection}
+      supervisorPendingSignals={options.supervisorPendingSignals}
       onSelectHome={options.onSelectHome}
       onSelectSupervisor={options.onSelectSupervisor}
       onSelectWorkspace={options.onSelectWorkspace}

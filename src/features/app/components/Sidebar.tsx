@@ -80,6 +80,7 @@ type SidebarProps = {
   showDebugButton: boolean;
   onAddWorkspace: () => void;
   homeSection: "projects" | "supervisor";
+  supervisorPendingSignals: number;
   onSelectHome: () => void;
   onSelectSupervisor: () => void;
   onSelectWorkspace: (id: string) => void;
@@ -140,6 +141,7 @@ export const Sidebar = memo(function Sidebar({
   showDebugButton,
   onAddWorkspace,
   homeSection,
+  supervisorPendingSignals,
   onSelectHome,
   onSelectSupervisor,
   onSelectWorkspace,
@@ -440,6 +442,7 @@ export const Sidebar = memo(function Sidebar({
     >
       <SidebarHeader
         homeSection={homeSection}
+        supervisorPendingSignals={supervisorPendingSignals}
         onSelectHome={onSelectHome}
         onSelectSupervisor={onSelectSupervisor}
         onAddWorkspace={onAddWorkspace}

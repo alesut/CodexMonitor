@@ -14,6 +14,7 @@ import { useDismissibleMenu } from "../hooks/useDismissibleMenu";
 
 type SidebarHeaderProps = {
   homeSection: "projects" | "supervisor";
+  supervisorPendingSignals: number;
   onSelectHome: () => void;
   onSelectSupervisor: () => void;
   onAddWorkspace: () => void;
@@ -28,6 +29,7 @@ type SidebarHeaderProps = {
 
 export function SidebarHeader({
   homeSection,
+  supervisorPendingSignals,
   onSelectHome,
   onSelectSupervisor,
   onAddWorkspace,
@@ -92,6 +94,11 @@ export function SidebarHeader({
             type="button"
           >
             Supervisor
+            {supervisorPendingSignals > 0 ? (
+              <span className="sidebar-title-badge" aria-label="Pending supervisor alerts">
+                {supervisorPendingSignals > 99 ? "99+" : supervisorPendingSignals}
+              </span>
+            ) : null}
           </button>
         </div>
       </div>

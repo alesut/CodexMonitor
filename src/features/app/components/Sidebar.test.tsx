@@ -41,6 +41,7 @@ const baseProps = {
   showDebugButton: false,
   onAddWorkspace: vi.fn(),
   homeSection: "projects" as const,
+  supervisorPendingSignals: 0,
   onSelectHome: vi.fn(),
   onSelectSupervisor: vi.fn(),
   onSelectWorkspace: vi.fn(),
@@ -259,5 +260,18 @@ describe("Sidebar", () => {
     fireEvent.click(supervisorButton);
 
     expect(onSelectSupervisor).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows pending supervisor signal badge in sidebar header", () => {
+    render(
+      <Sidebar
+        {...baseProps}
+        homeSection="supervisor"
+        supervisorPendingSignals={3}
+      />,
+    );
+
+    expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getByLabelText("Pending supervisor alerts")).toBeTruthy();
   });
 });

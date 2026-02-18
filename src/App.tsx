@@ -80,6 +80,7 @@ import {
 import { useUpdaterController } from "@app/hooks/useUpdaterController";
 import { useResponseRequiredNotificationsController } from "@app/hooks/useResponseRequiredNotificationsController";
 import { useErrorToasts } from "@/features/notifications/hooks/useErrorToasts";
+import { useSupervisorSignalAlerts } from "@/features/supervisor/hooks/useSupervisorSignalAlerts";
 import { useComposerShortcuts } from "@/features/composer/hooks/useComposerShortcuts";
 import { useComposerMenuActions } from "@/features/composer/hooks/useComposerMenuActions";
 import { useComposerEditorState } from "@/features/composer/hooks/useComposerEditorState";
@@ -339,6 +340,7 @@ function MainApp() {
   >(() => {});
 
   const { errorToasts, dismissErrorToast } = useErrorToasts();
+  const { pendingCriticalSignalsCount } = useSupervisorSignalAlerts();
   const queueGitStatusRefreshRef = useRef<() => void>(() => {});
   const handleThreadMessageActivity = useCallback(() => {
     queueGitStatusRefreshRef.current();
@@ -1959,6 +1961,7 @@ function MainApp() {
     showDebugButton,
     onAddWorkspace: handleAddWorkspace,
     homeSection,
+    supervisorPendingSignals: pendingCriticalSignalsCount,
     onSelectHome: handleSidebarSelectHome,
     onSelectSupervisor: handleSidebarSelectSupervisor,
     onSelectWorkspace: handleSidebarSelectWorkspace,
