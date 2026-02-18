@@ -402,16 +402,35 @@ export function useThreads({
     [onSubagentThreadDetected, threadHandlers, updateThreadParent],
   );
 
+  const handleThreadArchived = useCallback(
+    (workspaceId: string, threadId: string) => {
+      threadHandlers.onThreadArchived?.(workspaceId, threadId);
+      unpinThread(workspaceId, threadId);
+    },
+    [threadHandlers, unpinThread],
+  );
+
+  const handleThreadUnarchived = useCallback(
+    (workspaceId: string, threadId: string) => {
+      threadHandlers.onThreadUnarchived?.(workspaceId, threadId);
+    },
+    [threadHandlers],
+  );
+
   const handlers = useMemo(
     () => ({
       ...threadHandlers,
       onThreadStarted: handleThreadStarted,
+      onThreadArchived: handleThreadArchived,
+      onThreadUnarchived: handleThreadUnarchived,
       onAccountUpdated: handleAccountUpdated,
       onAccountLoginCompleted: handleAccountLoginCompleted,
     }),
     [
       threadHandlers,
       handleThreadStarted,
+      handleThreadArchived,
+      handleThreadUnarchived,
       handleAccountUpdated,
       handleAccountLoginCompleted,
     ],

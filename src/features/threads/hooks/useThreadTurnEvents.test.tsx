@@ -207,6 +207,48 @@ describe("useThreadTurnEvents", () => {
     );
   });
 
+  it("removes thread state on thread archived", () => {
+    const { result, dispatch } = makeOptions();
+
+    act(() => {
+      result.current.onThreadArchived("ws-1", "thread-7");
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "removeThread",
+      workspaceId: "ws-1",
+      threadId: "thread-7",
+    });
+  });
+
+  it("re-adds thread summary on thread unarchived", () => {
+    const { result, dispatch, recordThreadActivity, safeMessageActivity } =
+      makeOptions();
+
+    act(() => {
+      result.current.onThreadUnarchived("ws-1", "thread-8");
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "ensureThread",
+      workspaceId: "ws-1",
+      threadId: "thread-8",
+    });
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "setThreadTimestamp",
+        workspaceId: "ws-1",
+        threadId: "thread-8",
+      }),
+    );
+    expect(recordThreadActivity).toHaveBeenCalledWith(
+      "ws-1",
+      "thread-8",
+      expect.any(Number),
+    );
+    expect(safeMessageActivity).toHaveBeenCalled();
+  });
+
   it("marks processing and active turn on turn started", () => {
     const { result, dispatch, markProcessing, setActiveTurnId } = makeOptions();
 

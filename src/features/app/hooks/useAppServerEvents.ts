@@ -35,6 +35,8 @@ type AppServerEventHandlers = {
     workspaceId: string,
     payload: { threadId: string; threadName: string | null },
   ) => void;
+  onThreadArchived?: (workspaceId: string, threadId: string) => void;
+  onThreadUnarchived?: (workspaceId: string, threadId: string) => void;
   onBackgroundThreadAction?: (
     workspaceId: string,
     threadId: string,
@@ -108,9 +110,11 @@ export const METHODS_ROUTED_IN_USE_APP_SERVER_EVENTS = [
   "item/reasoning/textDelta",
   "item/started",
   "item/tool/requestUserInput",
+  "thread/archived",
   "thread/name/updated",
   "thread/started",
   "thread/tokenUsage/updated",
+  "thread/unarchived",
   "turn/completed",
   "turn/diff/updated",
   "turn/plan/updated",
@@ -244,6 +248,22 @@ export function useAppServerEvents(handlers: AppServerEventHandlers) {
             : null;
         if (threadId) {
           currentHandlers.onThreadNameUpdated?.(workspace_id, { threadId, threadName });
+        }
+        return;
+      }
+
+      if (method === "thread/archived") {
+        const threadId = String(params.threadId ?? params.thread_id ?? "").trim();
+        if (threadId) {
+          currentHandlers.onThreadArchived?.(workspace_id, threadId);
+        }
+        return;
+      }
+
+      if (method === "thread/unarchived") {
+        const threadId = String(params.threadId ?? params.thread_id ?? "").trim();
+        if (threadId) {
+          currentHandlers.onThreadUnarchived?.(workspace_id, threadId);
         }
         return;
       }

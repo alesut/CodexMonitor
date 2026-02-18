@@ -59,7 +59,9 @@ routed in `useAppServerEvents.ts` or handled in feature-specific subscriptions.
 - `item/agentMessage/delta`
 - `turn/started`
 - `thread/started`
+- `thread/archived`
 - `thread/name/updated`
+- `thread/unarchived`
 - `codex/backgroundThread`
 - `error`
 - `turn/completed`
@@ -103,9 +105,7 @@ events are currently not routed:
 - `item/mcpToolCall/progress`
 - `mcpServer/oauthLogin/completed`
 - `model/rerouted`
-- `thread/archived`
 - `thread/compacted` (deprecated; intentionally not routed)
-- `thread/unarchived`
 - `deprecationNotice`
 - `configWarning`
 - `windows/worldWritableWarning`

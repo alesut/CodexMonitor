@@ -49,6 +49,8 @@ describe("useAppServerEvents", () => {
       onWorkspaceConnected: vi.fn(),
       onThreadStarted: vi.fn(),
       onThreadNameUpdated: vi.fn(),
+      onThreadArchived: vi.fn(),
+      onThreadUnarchived: vi.fn(),
       onBackgroundThreadAction: vi.fn(),
       onAgentMessageDelta: vi.fn(),
       onReasoningSummaryBoundary: vi.fn(),
@@ -143,6 +145,28 @@ describe("useAppServerEvents", () => {
       threadId: "thread-2",
       threadName: "Renamed from server",
     });
+
+    act(() => {
+      listener?.({
+        workspace_id: "ws-1",
+        message: {
+          method: "thread/archived",
+          params: { thread_id: "thread-2" },
+        },
+      });
+    });
+    expect(handlers.onThreadArchived).toHaveBeenCalledWith("ws-1", "thread-2");
+
+    act(() => {
+      listener?.({
+        workspace_id: "ws-1",
+        message: {
+          method: "thread/unarchived",
+          params: { threadId: "thread-2" },
+        },
+      });
+    });
+    expect(handlers.onThreadUnarchived).toHaveBeenCalledWith("ws-1", "thread-2");
 
     act(() => {
       listener?.({

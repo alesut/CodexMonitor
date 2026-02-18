@@ -149,6 +149,44 @@ export function useThreadTurnEvents({
     [dispatch, getCustomName],
   );
 
+  const onThreadArchived = useCallback(
+    (workspaceId: string, threadId: string) => {
+      if (!threadId) {
+        return;
+      }
+      dispatch({ type: "removeThread", workspaceId, threadId });
+    },
+    [dispatch],
+  );
+
+  const onThreadUnarchived = useCallback(
+    (workspaceId: string, threadId: string) => {
+      if (!threadId) {
+        return;
+      }
+      dispatch({ type: "ensureThread", workspaceId, threadId });
+      const customName = getCustomName(workspaceId, threadId);
+      if (customName) {
+        dispatch({
+          type: "setThreadName",
+          workspaceId,
+          threadId,
+          name: customName,
+        });
+      }
+      const timestamp = Date.now();
+      dispatch({
+        type: "setThreadTimestamp",
+        workspaceId,
+        threadId,
+        timestamp,
+      });
+      recordThreadActivity(workspaceId, threadId, timestamp);
+      safeMessageActivity();
+    },
+    [dispatch, getCustomName, recordThreadActivity, safeMessageActivity],
+  );
+
   const onTurnStarted = useCallback(
     (workspaceId: string, threadId: string, turnId: string) => {
       dispatch({
@@ -293,6 +331,8 @@ export function useThreadTurnEvents({
   return {
     onThreadStarted,
     onThreadNameUpdated,
+    onThreadArchived,
+    onThreadUnarchived,
     onTurnStarted,
     onTurnCompleted,
     onTurnPlanUpdated,
