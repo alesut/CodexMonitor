@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 
 #[path = "supervisor_core/events.rs"]
 pub(crate) mod events;
+#[path = "supervisor_core/loop.rs"]
+pub(crate) mod supervisor_loop;
 
 pub(crate) const DEFAULT_ACTIVITY_FEED_LIMIT: usize = 200;
 
