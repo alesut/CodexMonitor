@@ -205,6 +205,7 @@ pub(crate) struct SupervisorState {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum SupervisorStateUpdate {
     UpsertWorkspace(SupervisorWorkspaceState),
     RemoveWorkspace {
@@ -250,6 +251,7 @@ pub(crate) fn thread_map_key(workspace_id: &str, thread_id: &str) -> String {
     format!("{workspace_id}:{thread_id}")
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn reduce(
     state: &SupervisorState,
     updates: impl IntoIterator<Item = SupervisorStateUpdate>,
@@ -259,6 +261,7 @@ pub(crate) fn reduce(
     next
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn apply_updates(
     state: &mut SupervisorState,
     updates: impl IntoIterator<Item = SupervisorStateUpdate>,

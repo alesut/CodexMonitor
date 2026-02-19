@@ -87,6 +87,7 @@ pub(crate) struct SupervisorLoop {
 }
 
 impl SupervisorLoop {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn new(config: SupervisorLoopConfig) -> Self {
         Self {
             state: SupervisorState::default(),
@@ -95,6 +96,7 @@ impl SupervisorLoop {
         }
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn from_state(config: SupervisorLoopConfig, state: SupervisorState) -> Self {
         let workspace_last_event_at_ms = state
             .workspaces

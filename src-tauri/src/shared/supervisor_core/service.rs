@@ -18,6 +18,7 @@ use super::{SupervisorActivityEntry, SupervisorState};
 
 const SUPERVISOR_FEED_DEFAULT_LIMIT: usize = 100;
 const SUPERVISOR_FEED_MAX_LIMIT: usize = 1000;
+#[cfg_attr(not(test), allow(dead_code))]
 const SUPERVISOR_STATE_FILE_NAME: &str = "supervisor-state.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -54,10 +55,12 @@ pub(crate) async fn supervisor_feed_core(
     SupervisorFeedResponse { items, total }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn supervisor_state_path(data_dir: &Path) -> PathBuf {
     data_dir.join(SUPERVISOR_STATE_FILE_NAME)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn read_supervisor_state(path: &PathBuf) -> Result<SupervisorState, String> {
     if !path.exists() {
         return Ok(SupervisorState::default());
@@ -66,6 +69,7 @@ pub(crate) fn read_supervisor_state(path: &PathBuf) -> Result<SupervisorState, S
     serde_json::from_str(&data).map_err(|error| error.to_string())
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn write_supervisor_state(
     path: &PathBuf,
     state: &SupervisorState,
@@ -77,6 +81,7 @@ pub(crate) fn write_supervisor_state(
     std::fs::write(path, data).map_err(|error| error.to_string())
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn persist_supervisor_snapshot(
     supervisor_loop: &Arc<Mutex<SupervisorLoop>>,
     path: &PathBuf,

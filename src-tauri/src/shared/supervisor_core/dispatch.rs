@@ -66,6 +66,7 @@ impl SupervisorDispatchIdempotencyStore {
         self.entries.insert(key, value);
     }
 
+    #[cfg(test)]
     pub(crate) fn snapshot(&self) -> BTreeMap<String, SupervisorDispatchActionResult> {
         self.entries.clone()
     }
@@ -166,10 +167,12 @@ impl SupervisorDispatchExecutor {
         Self::default()
     }
 
+    #[cfg(test)]
     pub(crate) fn with_idempotency_store(idempotency: SupervisorDispatchIdempotencyStore) -> Self {
         Self { idempotency }
     }
 
+    #[cfg(test)]
     pub(crate) fn idempotency_snapshot(&self) -> BTreeMap<String, SupervisorDispatchActionResult> {
         self.idempotency.snapshot()
     }

@@ -38,6 +38,7 @@ pub(crate) struct ValidatedSupervisorActionContract {
     pub(crate) dispatch_actions: Vec<SupervisorDispatchAction>,
 }
 
+#[cfg(test)]
 pub(crate) fn parse_supervisor_action_contract_json(
     raw_json: &str,
 ) -> Result<ValidatedSupervisorActionContract, String> {
