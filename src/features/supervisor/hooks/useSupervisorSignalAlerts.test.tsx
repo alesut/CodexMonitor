@@ -28,6 +28,7 @@ function baseSnapshot() {
     activity_feed: [],
     open_questions: {},
     pending_approvals: {},
+    chat_history: [],
   };
 }
 

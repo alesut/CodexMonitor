@@ -1,6 +1,22 @@
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
+import type { DictationSessionState, DictationTranscript } from "@/types";
 import { formatRelativeTime } from "../../../utils/time";
 import { useSupervisorOperations } from "../hooks/useSupervisorOperations";
+import { SupervisorChat } from "./SupervisorChat";
+
+type SupervisorHomeProps = {
+  dictationEnabled: boolean;
+  dictationState: DictationSessionState;
+  dictationLevel: number;
+  onToggleDictation: () => void;
+  onOpenDictationSettings: () => void;
+  dictationError: string | null;
+  onDismissDictationError: () => void;
+  dictationHint: string | null;
+  onDismissDictationHint: () => void;
+  dictationTranscript: DictationTranscript | null;
+  onDictationTranscriptHandled: (id: string) => void;
+};
 
 function formatSupervisorTime(value: number | null) {
   if (value === null) {
@@ -9,7 +25,19 @@ function formatSupervisorTime(value: number | null) {
   return formatRelativeTime(value);
 }
 
-export function SupervisorHome() {
+export function SupervisorHome({
+  dictationEnabled,
+  dictationState,
+  dictationLevel,
+  onToggleDictation,
+  onOpenDictationSettings,
+  dictationError,
+  onDismissDictationError,
+  dictationHint,
+  onDismissDictationHint,
+  dictationTranscript,
+  onDictationTranscriptHandled,
+}: SupervisorHomeProps) {
   const {
     workspaceList,
     threadList,
@@ -91,6 +119,20 @@ export function SupervisorHome() {
       {isLoading && workspaceList.length === 0 ? (
         <div className="supervisor-home-empty">Loading supervisor snapshot...</div>
       ) : null}
+
+      <SupervisorChat
+        dictationEnabled={dictationEnabled}
+        dictationState={dictationState}
+        dictationLevel={dictationLevel}
+        onToggleDictation={onToggleDictation}
+        onOpenDictationSettings={onOpenDictationSettings}
+        dictationError={dictationError}
+        onDismissDictationError={onDismissDictationError}
+        dictationHint={dictationHint}
+        onDismissDictationHint={onDismissDictationHint}
+        dictationTranscript={dictationTranscript}
+        onDictationTranscriptHandled={onDictationTranscriptHandled}
+      />
 
       <div className="supervisor-grid">
         <section className="supervisor-section">

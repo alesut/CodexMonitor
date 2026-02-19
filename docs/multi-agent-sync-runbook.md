@@ -138,6 +138,9 @@ When touching Supervisor behavior, keep app/daemon contract parity and daemon re
 - App commands: `src-tauri/src/lib.rs`, `src-tauri/src/supervisor.rs`
 - Daemon RPC: `src-tauri/src/bin/codex_monitor_daemon/rpc.rs`, `src-tauri/src/bin/codex_monitor_daemon/rpc/supervisor.rs`
 - Frontend IPC/events: `src/services/tauri.ts`, `src/services/events.ts`
+- Keep command parity for:
+  - `supervisor_snapshot`, `supervisor_feed`, `supervisor_dispatch`, `supervisor_ack_signal`
+  - `supervisor_chat_history`, `supervisor_chat_send`
 
 3. Persistence path (daemon mode):
 - `<app-data-dir>/supervisor-state.json`
@@ -147,7 +150,7 @@ When touching Supervisor behavior, keep app/daemon contract parity and daemon re
 
 ```bash
 npm run typecheck
-npm run test -- src/features/supervisor/components/SupervisorHome.test.tsx src/features/supervisor/hooks/useSupervisorSignalAlerts.test.tsx
+npm run test -- src/features/supervisor/components/SupervisorHome.test.tsx src/features/supervisor/components/SupervisorChat.test.tsx src/features/supervisor/hooks/useSupervisorSignalAlerts.test.tsx
 cd src-tauri && cargo test supervisor_core
 cd src-tauri && cargo check
 ```

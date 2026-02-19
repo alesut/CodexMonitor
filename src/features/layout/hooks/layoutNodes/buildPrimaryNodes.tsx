@@ -232,7 +232,19 @@ export function buildPrimaryNodes(options: LayoutNodesOptions): PrimaryLayoutNod
   );
 
   const homeNode = options.homeSection === "supervisor" ? (
-    <SupervisorHome />
+    <SupervisorHome
+      dictationEnabled={options.dictationEnabled}
+      dictationState={options.dictationState}
+      dictationLevel={options.dictationLevel}
+      onToggleDictation={options.onToggleDictation}
+      onOpenDictationSettings={options.onOpenDictationSettings ?? (() => {})}
+      dictationError={options.dictationError}
+      onDismissDictationError={options.onDismissDictationError}
+      dictationHint={options.dictationHint}
+      onDismissDictationHint={options.onDismissDictationHint}
+      dictationTranscript={options.dictationTranscript}
+      onDictationTranscriptHandled={options.onDictationTranscriptHandled}
+    />
   ) : (
     <Home
       onOpenSettings={options.onOpenSettings}

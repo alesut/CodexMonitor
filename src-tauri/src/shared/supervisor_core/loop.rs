@@ -7,10 +7,10 @@ use tokio::sync::Mutex;
 
 use super::events::{normalize_app_server_event, SupervisorEvent};
 use super::{
-    apply_update, SupervisorActivityEntry, SupervisorHealth, SupervisorPendingApproval,
-    SupervisorSignal, SupervisorSignalKind, SupervisorState, SupervisorStateUpdate,
-    SupervisorThreadState, SupervisorThreadStatus, SupervisorWorkspaceState,
-    DEFAULT_ACTIVITY_FEED_LIMIT,
+    apply_update, SupervisorActivityEntry, SupervisorChatMessage, SupervisorHealth,
+    SupervisorPendingApproval, SupervisorSignal, SupervisorSignalKind, SupervisorState,
+    SupervisorStateUpdate, SupervisorThreadState, SupervisorThreadStatus, SupervisorWorkspaceState,
+    DEFAULT_ACTIVITY_FEED_LIMIT, DEFAULT_CHAT_HISTORY_LIMIT,
 };
 use crate::backend::app_server::WorkspaceSession;
 use crate::types::WorkspaceEntry;
@@ -236,6 +236,20 @@ impl SupervisorLoop {
                 acknowledged_at_ms,
             },
         );
+    }
+
+    pub(crate) fn append_chat_message(&mut self, message: SupervisorChatMessage) {
+        apply_update(
+            &mut self.state,
+            SupervisorStateUpdate::PushChatMessage {
+                message,
+                max_items: DEFAULT_CHAT_HISTORY_LIMIT,
+            },
+        );
+    }
+
+    pub(crate) fn chat_history(&self) -> Vec<SupervisorChatMessage> {
+        self.state.chat_history.clone()
     }
 
     fn apply_supervisor_event(&mut self, event: SupervisorEvent) {

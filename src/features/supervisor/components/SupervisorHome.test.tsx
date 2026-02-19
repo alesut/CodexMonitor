@@ -19,6 +19,10 @@ vi.mock("@services/events", () => ({
   subscribeSupervisorEvents: vi.fn(),
 }));
 
+vi.mock("./SupervisorChat", () => ({
+  SupervisorChat: () => <div data-testid="supervisor-chat">Supervisor chat</div>,
+}));
+
 const snapshotFixture = {
   workspaces: {
     "ws-1": {
@@ -63,6 +67,7 @@ const snapshotFixture = {
   activity_feed: [],
   open_questions: {},
   pending_approvals: {},
+  chat_history: [],
 };
 
 function cloneSnapshot() {
@@ -87,6 +92,20 @@ function cloneFeed() {
   };
 }
 
+const supervisorHomeProps = {
+  dictationEnabled: true,
+  dictationState: "idle" as const,
+  dictationLevel: 0,
+  onToggleDictation: vi.fn(),
+  onOpenDictationSettings: vi.fn(),
+  dictationError: null,
+  onDismissDictationError: vi.fn(),
+  dictationHint: null,
+  onDismissDictationHint: vi.fn(),
+  dictationTranscript: null,
+  onDictationTranscriptHandled: vi.fn(),
+};
+
 describe("SupervisorHome", () => {
   afterEach(() => {
     cleanup();
@@ -100,7 +119,7 @@ describe("SupervisorHome", () => {
   });
 
   it("renders snapshot workspace and pending signal", async () => {
-    render(<SupervisorHome />);
+    render(<SupervisorHome {...supervisorHomeProps} />);
 
     expect(await screen.findByText("Supervisor")).toBeTruthy();
     expect(await screen.findByText("Workspace Alpha")).toBeTruthy();
@@ -122,7 +141,7 @@ describe("SupervisorHome", () => {
       .mockResolvedValueOnce(cloneSnapshot())
       .mockResolvedValueOnce(acknowledgedSnapshot);
 
-    render(<SupervisorHome />);
+    render(<SupervisorHome {...supervisorHomeProps} />);
     const ackButton = await screen.findByRole("button", { name: "Acknowledge" });
     fireEvent.click(ackButton);
 
@@ -134,7 +153,7 @@ describe("SupervisorHome", () => {
   });
 
   it("filters feed to only needs-input entries", async () => {
-    render(<SupervisorHome />);
+    render(<SupervisorHome {...supervisorHomeProps} />);
     await screen.findByText("Deployment run completed");
 
     const filterButton = screen.getByRole("button", { name: "Needs my input" });

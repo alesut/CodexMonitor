@@ -101,10 +101,14 @@ const DAEMON_NAME: &str = "codex-monitor-daemon";
 
 fn load_supervisor_loop(data_dir: &Path) -> Arc<Mutex<SupervisorLoop>> {
     let state_path = supervisor_service::supervisor_state_path(data_dir);
-    let restored_state = supervisor_service::read_supervisor_state(&state_path).unwrap_or_else(|error| {
-        eprintln!("failed to read supervisor state {}: {error}", state_path.display());
-        Default::default()
-    });
+    let restored_state =
+        supervisor_service::read_supervisor_state(&state_path).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to read supervisor state {}: {error}",
+                state_path.display()
+            );
+            Default::default()
+        });
     Arc::new(Mutex::new(SupervisorLoop::from_state(
         SupervisorLoopConfig::default(),
         restored_state,
@@ -951,6 +955,29 @@ impl DaemonState {
         Ok(json!({ "ok": true }))
     }
 
+    async fn supervisor_chat_history(&self) -> Result<Value, String> {
+        let response =
+            supervisor_service::supervisor_chat_history_core(&self.supervisor_loop).await;
+        serde_json::to_value(response).map_err(|error| error.to_string())
+    }
+
+    async fn supervisor_chat_send(&self, command: String) -> Result<Value, String> {
+        let response = supervisor_service::supervisor_chat_send_core(
+            &self.supervisor_loop,
+            &self.supervisor_dispatch_executor,
+            &self.sessions,
+            &command,
+            supervisor_loop::now_timestamp_ms(),
+        )
+        .await?;
+        supervisor_service::persist_supervisor_snapshot(
+            &self.supervisor_loop,
+            &self.supervisor_state_path,
+        )
+        .await?;
+        serde_json::to_value(response).map_err(|error| error.to_string())
+    }
+
     async fn get_config_model(&self, workspace_id: String) -> Result<Value, String> {
         codex_core::get_config_model_core(&self.workspaces, workspace_id).await
     }
@@ -1772,12 +1799,22 @@ mod tests {
                     ..Default::default()
                 },
             );
+            persisted
+                .chat_history
+                .push(shared::supervisor_core::SupervisorChatMessage {
+                    id: "chat-1".to_string(),
+                    role: shared::supervisor_core::SupervisorChatMessageRole::System,
+                    text: "Restored chat message".to_string(),
+                    created_at_ms: 42,
+                });
             supervisor_service::write_supervisor_state(&state_path, &persisted)
                 .expect("persist supervisor state");
 
             let restored_loop = load_supervisor_loop(&tmp);
             let snapshot = supervisor_service::supervisor_snapshot_core(&restored_loop).await;
             assert!(snapshot.workspaces.contains_key("ws-restored"));
+            assert_eq!(snapshot.chat_history.len(), 1);
+            assert_eq!(snapshot.chat_history[0].text, "Restored chat message");
 
             let _ = std::fs::remove_dir_all(&tmp);
         });

@@ -5,16 +5,25 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 use crate::backend::app_server::WorkspaceSession;
 
+use super::chat::{
+    build_dispatch_contract, format_ack_message, format_dispatch_message, format_feed_message,
+    format_help_message, format_status_message, parse_supervisor_chat_command,
+    SupervisorChatCommand, SupervisorChatHistoryResponse, SupervisorChatSendResponse,
+    SUPERVISOR_CHAT_FEED_LIMIT,
+};
 use super::contract::parse_supervisor_action_contract_value;
 use super::dispatch::{
     SupervisorDispatchBatchResult, SupervisorDispatchExecutor, SupervisorDispatchStatus,
     WorkspaceSessionDispatchBackend,
 };
 use super::supervisor_loop::{now_timestamp_ms, SupervisorLoop};
-use super::{SupervisorActivityEntry, SupervisorState};
+use super::{
+    SupervisorActivityEntry, SupervisorChatMessage, SupervisorChatMessageRole, SupervisorState,
+};
 
 const SUPERVISOR_FEED_DEFAULT_LIMIT: usize = 100;
 const SUPERVISOR_FEED_MAX_LIMIT: usize = 1000;
@@ -53,6 +62,129 @@ pub(crate) async fn supervisor_feed_core(
     items.truncate(limit);
 
     SupervisorFeedResponse { items, total }
+}
+
+pub(crate) async fn supervisor_chat_history_core(
+    supervisor_loop: &Arc<Mutex<SupervisorLoop>>,
+) -> SupervisorChatHistoryResponse {
+    let supervisor_loop = supervisor_loop.lock().await;
+    SupervisorChatHistoryResponse {
+        messages: supervisor_loop.chat_history(),
+    }
+}
+
+pub(crate) async fn supervisor_chat_send_core(
+    supervisor_loop: &Arc<Mutex<SupervisorLoop>>,
+    dispatch_executor: &Arc<Mutex<SupervisorDispatchExecutor>>,
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    command: &str,
+    received_at_ms: i64,
+) -> Result<SupervisorChatSendResponse, String> {
+    let command = command.trim();
+    if command.is_empty() {
+        return Err("command is required".to_string());
+    }
+
+    let user_message = SupervisorChatMessage {
+        id: format!("chat-user-{}-{}", received_at_ms, Uuid::new_v4().simple()),
+        role: SupervisorChatMessageRole::User,
+        text: command.to_string(),
+        created_at_ms: received_at_ms,
+    };
+
+    let response_text = execute_supervisor_chat_command(
+        supervisor_loop,
+        dispatch_executor,
+        sessions,
+        command,
+        received_at_ms,
+    )
+    .await;
+
+    let system_message = SupervisorChatMessage {
+        id: format!("chat-system-{}-{}", received_at_ms, Uuid::new_v4().simple()),
+        role: SupervisorChatMessageRole::System,
+        text: response_text,
+        created_at_ms: now_timestamp_ms(),
+    };
+
+    let mut supervisor_loop = supervisor_loop.lock().await;
+    supervisor_loop.append_chat_message(user_message);
+    supervisor_loop.append_chat_message(system_message);
+    Ok(SupervisorChatSendResponse {
+        messages: supervisor_loop.chat_history(),
+    })
+}
+
+async fn execute_supervisor_chat_command(
+    supervisor_loop: &Arc<Mutex<SupervisorLoop>>,
+    dispatch_executor: &Arc<Mutex<SupervisorDispatchExecutor>>,
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    command: &str,
+    received_at_ms: i64,
+) -> String {
+    let execution = async {
+        let command = parse_supervisor_chat_command(command)?;
+        execute_parsed_supervisor_chat_command(
+            supervisor_loop,
+            dispatch_executor,
+            sessions,
+            command,
+            received_at_ms,
+        )
+        .await
+    }
+    .await;
+
+    match execution {
+        Ok(response) => response,
+        Err(error) => format!("Error: {error}\nRun `/help` for command usage."),
+    }
+}
+
+async fn execute_parsed_supervisor_chat_command(
+    supervisor_loop: &Arc<Mutex<SupervisorLoop>>,
+    dispatch_executor: &Arc<Mutex<SupervisorDispatchExecutor>>,
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    command: SupervisorChatCommand,
+    received_at_ms: i64,
+) -> Result<String, String> {
+    match command {
+        SupervisorChatCommand::Help => Ok(format_help_message()),
+        SupervisorChatCommand::Status { workspace_id } => {
+            let snapshot = supervisor_snapshot_core(supervisor_loop).await;
+            format_status_message(&snapshot, workspace_id.as_deref())
+        }
+        SupervisorChatCommand::Feed { needs_input_only } => {
+            let feed = supervisor_feed_core(
+                supervisor_loop,
+                Some(SUPERVISOR_CHAT_FEED_LIMIT),
+                needs_input_only,
+            )
+            .await;
+            Ok(format_feed_message(
+                &feed.items,
+                feed.total,
+                needs_input_only,
+            ))
+        }
+        SupervisorChatCommand::Ack { signal_id } => {
+            supervisor_ack_signal_core(supervisor_loop, &signal_id, now_timestamp_ms()).await?;
+            Ok(format_ack_message(&signal_id))
+        }
+        SupervisorChatCommand::Dispatch(request) => {
+            let action_id_prefix = format!(
+                "chat-dispatch-{}-{}",
+                received_at_ms,
+                Uuid::new_v4().simple()
+            );
+            let contract = build_dispatch_contract(&request, &action_id_prefix);
+            let dispatch =
+                supervisor_dispatch_core(supervisor_loop, dispatch_executor, sessions, &contract)
+                    .await?;
+            Ok(format_dispatch_message(&request, &dispatch))
+        }
+    }
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -375,6 +507,66 @@ mod tests {
             assert!(restored.threads.contains_key("ws-1:thread-1"));
 
             let _ = std::fs::remove_dir_all(&temp_dir);
+        });
+    }
+
+    #[test]
+    fn supervisor_chat_send_core_appends_user_and_system_messages() {
+        run_async(async {
+            let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
+                SupervisorLoopConfig::default(),
+            )));
+            let dispatch_executor = Arc::new(Mutex::new(SupervisorDispatchExecutor::new()));
+            let sessions = Mutex::new(HashMap::new());
+
+            let response = supervisor_chat_send_core(
+                &supervisor_loop,
+                &dispatch_executor,
+                &sessions,
+                "/help",
+                100,
+            )
+            .await
+            .expect("chat send");
+
+            assert_eq!(response.messages.len(), 2);
+            assert_eq!(response.messages[0].role, SupervisorChatMessageRole::User);
+            assert_eq!(response.messages[0].text, "/help");
+            assert_eq!(response.messages[1].role, SupervisorChatMessageRole::System);
+            assert!(response.messages[1].text.contains("Supported commands"));
+
+            let history = supervisor_chat_history_core(&supervisor_loop).await;
+            assert_eq!(history.messages.len(), 2);
+        });
+    }
+
+    #[test]
+    fn supervisor_chat_send_core_converts_command_errors_to_chat_response() {
+        run_async(async {
+            let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
+                SupervisorLoopConfig::default(),
+            )));
+            let dispatch_executor = Arc::new(Mutex::new(SupervisorDispatchExecutor::new()));
+            let sessions = Mutex::new(HashMap::new());
+
+            let response = supervisor_chat_send_core(
+                &supervisor_loop,
+                &dispatch_executor,
+                &sessions,
+                "status",
+                100,
+            )
+            .await
+            .expect("chat send");
+
+            assert_eq!(response.messages.len(), 2);
+            let system_message = response.messages.last().expect("system message");
+            assert_eq!(system_message.role, SupervisorChatMessageRole::System);
+            assert!(
+                system_message.text.contains("commands must start with `/`"),
+                "unexpected response text: {}",
+                system_message.text
+            );
         });
     }
 }

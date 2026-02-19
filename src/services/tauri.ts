@@ -177,6 +177,7 @@ export type SupervisorSignalKind =
   | "stalled"
   | "disconnected";
 export type SupervisorDispatchStatus = "dispatched" | "failed";
+export type SupervisorChatMessageRole = "user" | "system";
 
 export type SupervisorWorkspaceState = {
   id: string;
@@ -261,6 +262,13 @@ export type SupervisorPendingApproval = {
   resolved_at_ms: number | null;
 };
 
+export type SupervisorChatMessage = {
+  id: string;
+  role: SupervisorChatMessageRole;
+  text: string;
+  created_at_ms: number;
+};
+
 export type SupervisorSnapshot = {
   workspaces: Record<string, SupervisorWorkspaceState>;
   threads: Record<string, SupervisorThreadState>;
@@ -269,6 +277,7 @@ export type SupervisorSnapshot = {
   activity_feed: SupervisorActivityEntry[];
   open_questions: Record<string, SupervisorOpenQuestion>;
   pending_approvals: Record<string, SupervisorPendingApproval>;
+  chat_history: SupervisorChatMessage[];
 };
 
 export type SupervisorFeedResponse = {
@@ -312,6 +321,14 @@ export type SupervisorDispatchResult = {
 
 export type SupervisorDispatchResponse = {
   results: SupervisorDispatchResult[];
+};
+
+export type SupervisorChatHistoryResponse = {
+  messages: SupervisorChatMessage[];
+};
+
+export type SupervisorChatSendResponse = {
+  messages: SupervisorChatMessage[];
 };
 
 type FileScope = "workspace" | "global";
@@ -529,6 +546,16 @@ export async function dispatchSupervisor(
 
 export async function ackSupervisorSignal(signalId: string): Promise<{ ok: boolean }> {
   return invoke<{ ok: boolean }>("supervisor_ack_signal", { signalId });
+}
+
+export async function getSupervisorChatHistory(): Promise<SupervisorChatHistoryResponse> {
+  return invoke<SupervisorChatHistoryResponse>("supervisor_chat_history");
+}
+
+export async function sendSupervisorChatCommand(
+  command: string,
+): Promise<SupervisorChatSendResponse> {
+  return invoke<SupervisorChatSendResponse>("supervisor_chat_send", { command });
 }
 
 export async function startThread(workspaceId: string) {

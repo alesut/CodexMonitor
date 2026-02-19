@@ -221,6 +221,8 @@ pub fn run() {
             supervisor::supervisor_feed,
             supervisor::supervisor_dispatch,
             supervisor::supervisor_ack_signal,
+            supervisor::supervisor_chat_history,
+            supervisor::supervisor_chat_send,
             codex::generate_commit_message,
             codex::generate_run_metadata,
             codex::generate_agent_description,

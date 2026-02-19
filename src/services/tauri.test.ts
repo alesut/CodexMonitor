@@ -48,6 +48,8 @@ import {
   generateAgentDescription,
   writeAgentConfigToml,
   writeAgentMd,
+  getSupervisorChatHistory,
+  sendSupervisorChatCommand,
 } from "./tauri";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -247,6 +249,20 @@ describe("tauri invoke wrappers", () => {
       workspaceId: "ws-9",
       threadId: "thread-9",
       name: "New Name",
+    });
+  });
+
+  it("invokes supervisor chat methods", async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockResolvedValueOnce({ messages: [] });
+    invokeMock.mockResolvedValueOnce({ messages: [] });
+
+    await getSupervisorChatHistory();
+    await sendSupervisorChatCommand("/help");
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "supervisor_chat_history");
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "supervisor_chat_send", {
+      command: "/help",
     });
   });
 

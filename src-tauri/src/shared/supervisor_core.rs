@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+#[path = "supervisor_core/chat.rs"]
+pub(crate) mod chat;
 #[path = "supervisor_core/contract.rs"]
 pub(crate) mod contract;
 #[path = "supervisor_core/dispatch.rs"]
@@ -14,6 +16,7 @@ pub(crate) mod service;
 pub(crate) mod supervisor_loop;
 
 pub(crate) const DEFAULT_ACTIVITY_FEED_LIMIT: usize = 200;
+pub(crate) const DEFAULT_CHAT_HISTORY_LIMIT: usize = 300;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -186,6 +189,22 @@ pub(crate) struct SupervisorPendingApproval {
     pub(crate) resolved_at_ms: Option<i64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SupervisorChatMessageRole {
+    #[default]
+    User,
+    System,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct SupervisorChatMessage {
+    pub(crate) id: String,
+    pub(crate) role: SupervisorChatMessageRole,
+    pub(crate) text: String,
+    pub(crate) created_at_ms: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub(crate) struct SupervisorState {
     #[serde(default)]
@@ -202,6 +221,8 @@ pub(crate) struct SupervisorState {
     pub(crate) open_questions: BTreeMap<String, SupervisorOpenQuestion>,
     #[serde(default)]
     pub(crate) pending_approvals: BTreeMap<String, SupervisorPendingApproval>,
+    #[serde(default)]
+    pub(crate) chat_history: Vec<SupervisorChatMessage>,
 }
 
 #[derive(Debug, Clone)]
@@ -244,6 +265,10 @@ pub(crate) enum SupervisorStateUpdate {
     ResolvePendingApproval {
         request_key: String,
         resolved_at_ms: i64,
+    },
+    PushChatMessage {
+        message: SupervisorChatMessage,
+        max_items: usize,
     },
 }
 
@@ -396,6 +421,25 @@ pub(crate) fn apply_update(state: &mut SupervisorState, update: SupervisorStateU
         } => {
             if let Some(approval) = state.pending_approvals.get_mut(&request_key) {
                 approval.resolved_at_ms = Some(resolved_at_ms);
+            }
+        }
+        SupervisorStateUpdate::PushChatMessage { message, max_items } => {
+            if let Some(existing_idx) = state
+                .chat_history
+                .iter()
+                .position(|item| item.id == message.id)
+            {
+                state.chat_history.remove(existing_idx);
+            }
+            state.chat_history.push(message);
+            let limit = if max_items == 0 {
+                DEFAULT_CHAT_HISTORY_LIMIT
+            } else {
+                max_items
+            };
+            if state.chat_history.len() > limit {
+                let to_drop = state.chat_history.len() - limit;
+                state.chat_history.drain(0..to_drop);
             }
         }
     }
@@ -613,5 +657,50 @@ mod tests {
                 .and_then(|approval| approval.resolved_at_ms),
             Some(40)
         );
+    }
+
+    #[test]
+    fn push_chat_message_keeps_recent_messages_with_limit() {
+        let mut state = SupervisorState::default();
+        apply_update(
+            &mut state,
+            SupervisorStateUpdate::PushChatMessage {
+                message: SupervisorChatMessage {
+                    id: "chat-1".to_string(),
+                    role: SupervisorChatMessageRole::User,
+                    text: "/help".to_string(),
+                    created_at_ms: 1,
+                },
+                max_items: 2,
+            },
+        );
+        apply_update(
+            &mut state,
+            SupervisorStateUpdate::PushChatMessage {
+                message: SupervisorChatMessage {
+                    id: "chat-2".to_string(),
+                    role: SupervisorChatMessageRole::System,
+                    text: "help response".to_string(),
+                    created_at_ms: 2,
+                },
+                max_items: 2,
+            },
+        );
+        apply_update(
+            &mut state,
+            SupervisorStateUpdate::PushChatMessage {
+                message: SupervisorChatMessage {
+                    id: "chat-3".to_string(),
+                    role: SupervisorChatMessageRole::User,
+                    text: "/status".to_string(),
+                    created_at_ms: 3,
+                },
+                max_items: 2,
+            },
+        );
+
+        assert_eq!(state.chat_history.len(), 2);
+        assert_eq!(state.chat_history[0].id, "chat-2");
+        assert_eq!(state.chat_history[1].id, "chat-3");
     }
 }

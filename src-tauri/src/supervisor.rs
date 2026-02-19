@@ -98,3 +98,44 @@ pub(crate) async fn supervisor_ack_signal(
     .await?;
     Ok(json!({ "ok": true }))
 }
+
+#[tauri::command]
+pub(crate) async fn supervisor_chat_history(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Value, String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        return remote_backend::call_remote(&*state, app, "supervisor_chat_history", json!({}))
+            .await;
+    }
+
+    let response = supervisor_service::supervisor_chat_history_core(&state.supervisor_loop).await;
+    serde_json::to_value(response).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn supervisor_chat_send(
+    command: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Value, String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        return remote_backend::call_remote(
+            &*state,
+            app,
+            "supervisor_chat_send",
+            json!({ "command": command }),
+        )
+        .await;
+    }
+
+    let response = supervisor_service::supervisor_chat_send_core(
+        &state.supervisor_loop,
+        &state.supervisor_dispatch_executor,
+        &state.sessions,
+        &command,
+        supervisor_loop::now_timestamp_ms(),
+    )
+    .await?;
+    serde_json::to_value(response).map_err(|error| error.to_string())
+}

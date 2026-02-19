@@ -26,6 +26,14 @@ pub(super) async fn try_handle(
             };
             Some(state.supervisor_ack_signal(signal_id).await)
         }
+        "supervisor_chat_history" => Some(state.supervisor_chat_history().await),
+        "supervisor_chat_send" => {
+            let command = match parse_string(params, "command") {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
+            Some(state.supervisor_chat_send(command).await)
+        }
         _ => None,
     }
 }
