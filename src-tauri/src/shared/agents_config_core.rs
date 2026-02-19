@@ -103,7 +103,6 @@ pub(crate) fn set_agents_core_settings_core(
 
     let features = config_toml_core::ensure_table(&mut document, "features")?;
     features["multi_agent"] = value(input.multi_agent_enabled);
-    let _ = features.remove("collab");
 
     let agents = config_toml_core::ensure_table(&mut document, "agents")?;
     agents["max_threads"] = value(input.max_threads as i64);

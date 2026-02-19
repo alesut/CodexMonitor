@@ -158,6 +158,7 @@ export type LayoutNodesOptions = {
   onAddWorkspace: () => void;
   homeSection: HomeSection;
   supervisorPendingSignals: number;
+  onAddWorkspaceFromUrl: () => void;
   onSelectHome: () => void;
   onSelectSupervisor: () => void;
   onSelectWorkspace: (workspaceId: string) => void;

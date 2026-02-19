@@ -6,10 +6,6 @@ pub(crate) fn read_steer_enabled() -> Result<Option<bool>, String> {
     read_feature_flag("steer")
 }
 
-pub(crate) fn read_collab_enabled() -> Result<Option<bool>, String> {
-    read_feature_flag("collab")
-}
-
 pub(crate) fn read_collaboration_modes_enabled() -> Result<Option<bool>, String> {
     read_feature_flag("collaboration_modes")
 }
@@ -34,10 +30,6 @@ pub(crate) fn write_steer_enabled(enabled: bool) -> Result<(), String> {
     write_feature_flag("steer", enabled)
 }
 
-pub(crate) fn write_collab_enabled(enabled: bool) -> Result<(), String> {
-    write_feature_flag("collab", enabled)
-}
-
 pub(crate) fn write_collaboration_modes_enabled(enabled: bool) -> Result<(), String> {
     write_feature_flag("collaboration_modes", enabled)
 }
@@ -54,6 +46,9 @@ pub(crate) fn write_feature_enabled(feature_key: &str, enabled: bool) -> Result<
     let key = feature_key.trim();
     if key.is_empty() {
         return Err("feature key is empty".to_string());
+    }
+    if key.eq_ignore_ascii_case("collab") {
+        return Err("feature key `collab` is no longer supported; use `multi_agent`".to_string());
     }
     write_feature_flag(key, enabled)
 }

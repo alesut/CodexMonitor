@@ -282,6 +282,38 @@ impl DaemonState {
         .await
     }
 
+    async fn add_workspace_from_git_url(
+        &self,
+        url: String,
+        destination_path: String,
+        target_folder_name: Option<String>,
+        codex_bin: Option<String>,
+        client_version: String,
+    ) -> Result<WorkspaceInfo, String> {
+        let client_version = client_version.clone();
+        workspaces_core::add_workspace_from_git_url_core(
+            url,
+            destination_path,
+            target_folder_name,
+            codex_bin,
+            &self.workspaces,
+            &self.sessions,
+            &self.app_settings,
+            &self.storage_path,
+            move |entry, default_bin, codex_args, codex_home| {
+                spawn_with_client(
+                    self.event_sink.clone(),
+                    client_version.clone(),
+                    entry,
+                    default_bin,
+                    codex_args,
+                    codex_home,
+                )
+            },
+        )
+        .await
+    }
+
     async fn add_worktree(
         &self,
         parent_id: String,
