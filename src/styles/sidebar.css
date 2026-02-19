@@ -86,7 +86,7 @@
 
 .sidebar-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 0;
   margin-bottom: 0;
@@ -94,22 +94,29 @@
 }
 
 .sidebar-header-title {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .sidebar-title-group {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
 }
 
 .sidebar-title-button {
   min-width: 0;
+  max-width: 100%;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: color 0.15s ease;
 }
 
@@ -416,6 +423,7 @@
 .sidebar-header .subtitle {
   margin-top: 0;
   line-height: 1.1;
+  font-size: 16px;
 }
 
 .subtitle-button {
