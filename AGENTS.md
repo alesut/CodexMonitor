@@ -20,6 +20,21 @@ CodexMonitor is a Tauri app that orchestrates Codex agents across local workspac
 - Backend daemon: JSON-RPC process (`src-tauri/src/bin/codex_monitor_daemon.rs`)
 - Shared backend source of truth: `src-tauri/src/shared/*`
 
+## Issue Tracking
+
+Use `bd` (beads) as the canonical task tracker for repository work.
+
+- Run `bd ready` at session start to pick unblocked work.
+- Create tasks with `bd create "Title" --type task --priority 2`.
+- Close completed work with `bd close <id>`.
+- Run `bd sync` before handing off or ending a session.
+- Run `bd prime` for full workflow context.
+
+Worktree rule:
+
+- Initialize beads only in the main repository root (`bd init`).
+- Do not run `bd init` inside git worktrees; they reuse the shared `.beads` database.
+
 ## Non-Negotiable Architecture Rules
 
 1. Put shared/domain backend logic in `src-tauri/src/shared/*` first.
@@ -151,3 +166,29 @@ Use extra care in high-churn/high-complexity files:
 - Task-oriented code map: `docs/codebase-map.md`
 - Multi-agent upstream sync runbook: `docs/multi-agent-sync-runbook.md`
 - Setup/build/release/test commands: `README.md`
+
+## Landing the Plane (Session Completion)
+
+**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create issues for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **PUSH TO REMOTE** - This is MANDATORY:
+   ```bash
+   git pull --rebase
+   bd sync
+   git push
+   git status  # MUST show "up to date with origin"
+   ```
+5. **Clean up** - Clear stashes, prune remote branches
+6. **Verify** - All changes committed AND pushed
+7. **Hand off** - Provide context for next session
+
+**CRITICAL RULES:**
+- Work is NOT complete until `git push` succeeds
+- NEVER stop before pushing - that leaves work stranded locally
+- NEVER say "ready to push when you are" - YOU must push
+- If push fails, resolve and retry until it succeeds

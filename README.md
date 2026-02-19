@@ -52,6 +52,7 @@ CodexMonitor is a Tauri app for orchestrating multiple Codex agents across local
 - Codex CLI installed and available as `codex` in `PATH` (or configure a custom Codex binary in app/workspace settings)
 - Git CLI (used for worktree operations)
 - GitHub CLI (`gh`) for GitHub Issues/PR integrations (optional)
+- beads CLI (`bd`) for task tracking (`brew install beads`)
 
 If you hit native build errors, run:
 
@@ -71,6 +72,34 @@ Run in dev mode:
 
 ```bash
 npm run tauri:dev
+```
+
+## Issue Tracking (beads)
+
+Use `bd` (beads) as the canonical task tracker for repository work.
+
+Initialize once in the main repository root:
+
+```bash
+cd /path/to/main/CodexMonitor
+bd init
+```
+
+Worktree note: do not run `bd init` inside git worktrees. Worktrees reuse the shared `.beads` database from the main repository.
+
+Daily workflow:
+
+```bash
+bd ready
+bd create "Title" --type task --priority 2
+bd close <id>
+bd sync
+```
+
+For full AI workflow context:
+
+```bash
+bd prime
 ```
 
 ## iOS Support (WIP)
