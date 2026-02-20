@@ -3,7 +3,13 @@
   flex-direction: column;
   gap: 16px;
   padding: 16px;
+  height: 100%;
+  width: 100%;
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
   min-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .supervisor-home-header {
