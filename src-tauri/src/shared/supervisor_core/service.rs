@@ -79,6 +79,38 @@ pub(crate) async fn supervisor_chat_history_core(
     }
 }
 
+pub(crate) async fn supervisor_chat_autoconnect_target_core(
+    supervisor_loop: &Arc<Mutex<SupervisorLoop>>,
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
+    app_settings: &Mutex<AppSettings>,
+    command: &str,
+) -> Option<String> {
+    let prompt = command.trim();
+    if prompt.is_empty() || prompt.starts_with('/') {
+        return None;
+    }
+
+    let has_waiting_subtasks = {
+        let supervisor_loop = supervisor_loop.lock().await;
+        !supervisor_loop.waiting_jobs().is_empty()
+    };
+    if has_waiting_subtasks {
+        return None;
+    }
+
+    let workspace_metadata =
+        collect_route_workspace_metadata(supervisor_loop, sessions, workspaces).await;
+    let settings = app_settings.lock().await.clone();
+    let route = select_supervisor_route(prompt, &workspace_metadata, &settings);
+    if route.kind != SupervisorRouteKind::WorkspaceDelegate || !route.requires_workspace_connection
+    {
+        return None;
+    }
+
+    route.workspace_id
+}
+
 pub(crate) async fn supervisor_chat_send_core(
     supervisor_loop: &Arc<Mutex<SupervisorLoop>>,
     dispatch_executor: &Arc<Mutex<SupervisorDispatchExecutor>>,
@@ -934,6 +966,19 @@ mod tests {
         }
     }
 
+    fn workspace_entry(id: &str, name: &str, path: &str) -> WorkspaceEntry {
+        WorkspaceEntry {
+            id: id.to_string(),
+            name: name.to_string(),
+            path: path.to_string(),
+            codex_bin: None,
+            kind: WorkspaceKind::Main,
+            parent_id: None,
+            worktree: None,
+            settings: WorkspaceSettings::default(),
+        }
+    }
+
     async fn spawn_reply_session(workspace_id: &str) -> Arc<WorkspaceSession> {
         #[cfg(target_os = "windows")]
         let mut command = {
@@ -1337,6 +1382,64 @@ mod tests {
                 "unexpected response text: {}",
                 system_message.text
             );
+        });
+    }
+
+    #[test]
+    fn supervisor_chat_autoconnect_target_core_returns_explicit_single_workspace() {
+        run_async(async {
+            let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
+                SupervisorLoopConfig::default(),
+            )));
+            let sessions = Mutex::new(HashMap::new());
+            let workspaces = Mutex::new(HashMap::from([(
+                "ws-applesearchads".to_string(),
+                workspace_entry("ws-applesearchads", "applesearchads", "/tmp/applesearchads"),
+            )]));
+            let app_settings = Mutex::new(AppSettings::default());
+
+            let target = supervisor_chat_autoconnect_target_core(
+                &supervisor_loop,
+                &sessions,
+                &workspaces,
+                &app_settings,
+                "Обнови ветку в applesearchads",
+            )
+            .await;
+
+            assert_eq!(target.as_deref(), Some("ws-applesearchads"));
+        });
+    }
+
+    #[test]
+    fn supervisor_chat_autoconnect_target_core_returns_none_for_multiple_explicit_matches() {
+        run_async(async {
+            let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
+                SupervisorLoopConfig::default(),
+            )));
+            let sessions = Mutex::new(HashMap::new());
+            let workspaces = Mutex::new(HashMap::from([
+                (
+                    "ws-applesearchads".to_string(),
+                    workspace_entry("ws-applesearchads", "applesearchads", "/tmp/applesearchads"),
+                ),
+                (
+                    "ws-stories".to_string(),
+                    workspace_entry("ws-stories", "stories", "/tmp/stories"),
+                ),
+            ]));
+            let app_settings = Mutex::new(AppSettings::default());
+
+            let target = supervisor_chat_autoconnect_target_core(
+                &supervisor_loop,
+                &sessions,
+                &workspaces,
+                &app_settings,
+                "Обнови ветки в applesearchads и stories",
+            )
+            .await;
+
+            assert!(target.is_none());
         });
     }
 

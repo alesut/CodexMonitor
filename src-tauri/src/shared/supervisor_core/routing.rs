@@ -49,6 +49,8 @@ pub(crate) struct SupervisorRouteDecision {
     #[serde(default)]
     pub(crate) used_dedicated_workspace: bool,
     #[serde(default)]
+    pub(crate) requires_workspace_connection: bool,
+    #[serde(default)]
     pub(crate) fallback_message: Option<String>,
     #[serde(default)]
     pub(crate) clarification: Option<String>,
@@ -81,11 +83,59 @@ pub(crate) fn select_supervisor_route(
             local_tool: Some(local_tool),
             model: None,
             used_dedicated_workspace: false,
+            requires_workspace_connection: false,
             fallback_message: None,
             clarification: None,
             options: Vec::new(),
             candidates: sorted_candidates,
         };
+    }
+
+    let explicit_matches = sorted_candidates
+        .iter()
+        .filter(|workspace| prompt_mentions_workspace(&prompt_lower, workspace))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if explicit_matches.len() > 1 {
+        let options = explicit_matches
+            .iter()
+            .map(|workspace| workspace.workspace_id.clone())
+            .collect::<Vec<_>>();
+        return clarification_decision(
+            "Multiple workspace references were detected in the prompt.".to_string(),
+            "Specify a single target workspace or use `/dispatch --ws ...` for multi-workspace fanout."
+                .to_string(),
+            options,
+            sorted_candidates,
+            None,
+        );
+    }
+
+    if let Some(explicit_workspace) = explicit_matches.first() {
+        let requires_workspace_connection = !explicit_workspace.connected
+            || !explicit_workspace.available
+            || matches!(explicit_workspace.health, SupervisorHealth::Disconnected);
+        let reason = if requires_workspace_connection {
+            format!(
+                "Prompt explicitly matched workspace metadata; selected `{}` and will auto-connect before dispatch.",
+                explicit_workspace.workspace_id
+            )
+        } else {
+            format!(
+                "Prompt explicitly matched workspace metadata; selected `{}`.",
+                explicit_workspace.workspace_id
+            )
+        };
+        return workspace_decision(
+            explicit_workspace.workspace_id.clone(),
+            reason,
+            None,
+            false,
+            requires_workspace_connection,
+            None,
+            sorted_candidates,
+        );
     }
 
     let available = sorted_candidates
@@ -125,6 +175,7 @@ pub(crate) fn select_supervisor_route(
                     ),
                     dedicated_model,
                     true,
+                    false,
                     None,
                     sorted_candidates,
                 );
@@ -149,6 +200,7 @@ pub(crate) fn select_supervisor_route(
                 ),
                 dedicated_model,
                 true,
+                false,
                 None,
                 sorted_candidates,
             );
@@ -241,6 +293,7 @@ fn select_standard_workspace_route(
         },
         None,
         false,
+        false,
         fallback_message,
         candidates,
     )
@@ -251,6 +304,7 @@ fn workspace_decision(
     reason: String,
     model: Option<String>,
     used_dedicated_workspace: bool,
+    requires_workspace_connection: bool,
     fallback_message: Option<String>,
     candidates: Vec<SupervisorRouteWorkspaceMetadata>,
 ) -> SupervisorRouteDecision {
@@ -261,6 +315,7 @@ fn workspace_decision(
         local_tool: None,
         model,
         used_dedicated_workspace,
+        requires_workspace_connection,
         fallback_message,
         clarification: None,
         options: Vec::new(),
@@ -282,6 +337,7 @@ fn clarification_decision(
         local_tool: None,
         model: None,
         used_dedicated_workspace: false,
+        requires_workspace_connection: false,
         fallback_message,
         clarification: Some(clarification),
         options,
@@ -415,6 +471,62 @@ mod tests {
         );
         assert_eq!(route.kind, SupervisorRouteKind::WorkspaceDelegate);
         assert_eq!(route.workspace_id.as_deref(), Some("ws-2"));
+    }
+
+    #[test]
+    fn routes_to_explicit_workspace_and_requires_connection_when_disconnected() {
+        let settings = AppSettings::default();
+        let route = select_supervisor_route(
+            "Update branch in applesearchads",
+            &[SupervisorRouteWorkspaceMetadata {
+                workspace_id: "ws-applesearchads".to_string(),
+                name: "applesearchads".to_string(),
+                path: "/tmp/applesearchads".to_string(),
+                branch: Some("main".to_string()),
+                connected: false,
+                available: false,
+                health: SupervisorHealth::Disconnected,
+                capabilities: vec!["workspace_fs".to_string()],
+            }],
+            &settings,
+        );
+        assert_eq!(route.kind, SupervisorRouteKind::WorkspaceDelegate);
+        assert_eq!(route.workspace_id.as_deref(), Some("ws-applesearchads"));
+        assert!(route.requires_workspace_connection);
+    }
+
+    #[test]
+    fn asks_for_clarification_when_multiple_workspaces_are_explicitly_mentioned() {
+        let settings = AppSettings::default();
+        let route = select_supervisor_route(
+            "Run checks in applesearchads and stories",
+            &[
+                SupervisorRouteWorkspaceMetadata {
+                    workspace_id: "ws-a".to_string(),
+                    name: "applesearchads".to_string(),
+                    path: "/tmp/applesearchads".to_string(),
+                    branch: Some("main".to_string()),
+                    connected: false,
+                    available: false,
+                    health: SupervisorHealth::Disconnected,
+                    capabilities: vec!["workspace_fs".to_string()],
+                },
+                SupervisorRouteWorkspaceMetadata {
+                    workspace_id: "ws-b".to_string(),
+                    name: "stories".to_string(),
+                    path: "/tmp/stories".to_string(),
+                    branch: Some("main".to_string()),
+                    connected: false,
+                    available: false,
+                    health: SupervisorHealth::Disconnected,
+                    capabilities: vec!["workspace_fs".to_string()],
+                },
+            ],
+            &settings,
+        );
+        assert_eq!(route.kind, SupervisorRouteKind::Clarification);
+        assert!(route.options.contains(&"ws-a".to_string()));
+        assert!(route.options.contains(&"ws-b".to_string()));
     }
 
     #[test]

@@ -4,6 +4,7 @@ pub(super) async fn try_handle(
     state: &DaemonState,
     method: &str,
     params: &Value,
+    client_version: &str,
 ) -> Option<Result<Value, String>> {
     match method {
         "supervisor_snapshot" => Some(state.supervisor_snapshot().await),
@@ -32,7 +33,11 @@ pub(super) async fn try_handle(
                 Ok(value) => value,
                 Err(error) => return Some(Err(error)),
             };
-            Some(state.supervisor_chat_send(command).await)
+            Some(
+                state
+                    .supervisor_chat_send(command, client_version.to_string())
+                    .await,
+            )
         }
         _ => None,
     }

@@ -1,10 +1,27 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use serde_json::{json, Value};
 use tauri::{AppHandle, State};
 
+use crate::backend::app_server::WorkspaceSession;
+use crate::codex::spawn_workspace_session;
 use crate::remote_backend;
 use crate::shared::supervisor_core::service as supervisor_service;
 use crate::shared::supervisor_core::supervisor_loop;
+use crate::shared::workspaces_core;
 use crate::state::AppState;
+use crate::types::WorkspaceEntry;
+
+fn spawn_supervisor_workspace_session(
+    app: &AppHandle,
+    entry: WorkspaceEntry,
+    default_bin: Option<String>,
+    codex_args: Option<String>,
+    codex_home: Option<PathBuf>,
+) -> impl std::future::Future<Output = Result<Arc<WorkspaceSession>, String>> {
+    spawn_workspace_session(entry, default_bin, codex_args, app.clone(), codex_home)
+}
 
 #[tauri::command]
 pub(crate) async fn supervisor_snapshot(
@@ -125,6 +142,27 @@ pub(crate) async fn supervisor_chat_send(
             app,
             "supervisor_chat_send",
             json!({ "command": command }),
+        )
+        .await;
+    }
+
+    if let Some(workspace_id) = supervisor_service::supervisor_chat_autoconnect_target_core(
+        &state.supervisor_loop,
+        &state.sessions,
+        &state.workspaces,
+        &state.app_settings,
+        &command,
+    )
+    .await
+    {
+        let _ = workspaces_core::connect_workspace_core(
+            workspace_id,
+            &state.workspaces,
+            &state.sessions,
+            &state.app_settings,
+            |entry, default_bin, codex_args, codex_home| {
+                spawn_supervisor_workspace_session(&app, entry, default_bin, codex_args, codex_home)
+            },
         )
         .await;
     }

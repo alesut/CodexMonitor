@@ -993,7 +993,25 @@ impl DaemonState {
         serde_json::to_value(response).map_err(|error| error.to_string())
     }
 
-    async fn supervisor_chat_send(&self, command: String) -> Result<Value, String> {
+    async fn supervisor_chat_send(
+        &self,
+        command: String,
+        client_version: String,
+    ) -> Result<Value, String> {
+        if let Some(workspace_id) = supervisor_service::supervisor_chat_autoconnect_target_core(
+            &self.supervisor_loop,
+            &self.sessions,
+            &self.workspaces,
+            &self.app_settings,
+            &command,
+        )
+        .await
+        {
+            let _ = self
+                .connect_workspace(workspace_id, client_version.clone())
+                .await;
+        }
+
         let response = supervisor_service::supervisor_chat_send_core(
             &self.supervisor_loop,
             &self.supervisor_dispatch_executor,
