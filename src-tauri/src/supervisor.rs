@@ -133,6 +133,8 @@ pub(crate) async fn supervisor_chat_send(
         &state.supervisor_loop,
         &state.supervisor_dispatch_executor,
         &state.sessions,
+        &state.workspaces,
+        &state.app_settings,
         &command,
         supervisor_loop::now_timestamp_ms(),
     )

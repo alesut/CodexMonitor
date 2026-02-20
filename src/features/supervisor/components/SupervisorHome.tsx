@@ -25,6 +25,15 @@ function formatSupervisorTime(value: number | null) {
   return formatRelativeTime(value);
 }
 
+function normalizeJobStatusLabel(status: string) {
+  const normalized = status === "pending" ? "queued" : status;
+  return normalized.replace(/_/g, " ");
+}
+
+function normalizeJobStatusClass(status: string) {
+  return status === "pending" ? "queued" : status;
+}
+
 export function SupervisorHome({
   dictationEnabled,
   dictationState,
@@ -223,23 +232,54 @@ export function SupervisorHome({
             <p className="supervisor-home-empty">No jobs dispatched yet.</p>
           ) : (
             <ul className="supervisor-job-list">
-              {jobList.map((job) => (
-                <li key={job.id} className="supervisor-job-item">
-                  <div className="supervisor-job-top">
-                    <span className="supervisor-job-name">{job.description}</span>
-                    <span className={`supervisor-job-status is-${job.status}`}>
-                      {job.status}
-                    </span>
-                  </div>
-                  <div className="supervisor-job-meta">
-                    Workspace: {job.workspace_id} ·{" "}
-                    {job.thread_id ? `Thread ${job.thread_id}` : "Thread pending"}
-                  </div>
-                  {job.error ? (
-                    <div className="supervisor-job-error">Error: {job.error}</div>
-                  ) : null}
-                </li>
-              ))}
+              {jobList.map((job) => {
+                const normalizedStatusClass = normalizeJobStatusClass(job.status);
+                const normalizedStatusLabel = normalizeJobStatusLabel(job.status);
+                const recentEvents = [...(job.recent_events ?? [])]
+                  .slice(-4)
+                  .reverse();
+                return (
+                  <li key={job.id} className="supervisor-job-item">
+                    <div className="supervisor-job-top">
+                      <span className="supervisor-job-name">{job.description}</span>
+                      <span className={`supervisor-job-status is-${normalizedStatusClass}`}>
+                        {normalizedStatusLabel}
+                      </span>
+                    </div>
+                    <div className="supervisor-job-meta">
+                      Workspace: {job.workspace_id} ·{" "}
+                      {job.thread_id ? `Thread ${job.thread_id}` : "Thread pending"}
+                    </div>
+                    <div className="supervisor-job-meta">
+                      Route: {job.route_kind ?? "workspace_delegate"} · Target:{" "}
+                      {job.route_target ?? job.workspace_id}
+                      {job.model ? ` · Model ${job.model}` : ""}
+                    </div>
+                    {job.route_reason ? (
+                      <div className="supervisor-job-meta">Reason: {job.route_reason}</div>
+                    ) : null}
+                    {job.route_fallback ? (
+                      <div className="supervisor-job-meta">Fallback: {job.route_fallback}</div>
+                    ) : null}
+                    {recentEvents.length > 0 ? (
+                      <ul className="supervisor-job-events">
+                        {recentEvents.map((event) => (
+                          <li key={event.id} className="supervisor-job-event">
+                            <span className="supervisor-job-event-kind">{event.kind}</span>
+                            <span className="supervisor-job-event-message">{event.message}</span>
+                            <span className="supervisor-job-event-time">
+                              {formatSupervisorTime(event.created_at_ms)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {job.error ? (
+                      <div className="supervisor-job-error">Error: {job.error}</div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

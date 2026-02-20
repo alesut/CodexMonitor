@@ -7,15 +7,17 @@ use tokio::sync::Mutex;
 
 use super::events::{normalize_app_server_event, SupervisorEvent};
 use super::{
-    apply_update, SupervisorActivityEntry, SupervisorChatMessage, SupervisorHealth,
+    apply_update, SupervisorActivityEntry, SupervisorChatMessage, SupervisorChatMessageRole,
+    SupervisorHealth, SupervisorJobState, SupervisorJobStatus, SupervisorOpenQuestion,
     SupervisorPendingApproval, SupervisorSignal, SupervisorSignalKind, SupervisorState,
-    SupervisorStateUpdate, SupervisorThreadState, SupervisorThreadStatus, SupervisorWorkspaceState,
-    DEFAULT_ACTIVITY_FEED_LIMIT, DEFAULT_CHAT_HISTORY_LIMIT,
+    SupervisorStateUpdate, SupervisorSubtaskEvent, SupervisorThreadState, SupervisorThreadStatus,
+    SupervisorWorkspaceState, DEFAULT_ACTIVITY_FEED_LIMIT, DEFAULT_CHAT_HISTORY_LIMIT,
 };
 use crate::backend::app_server::WorkspaceSession;
 use crate::types::WorkspaceEntry;
 
 pub(crate) const SUPERVISOR_HEALTH_TICK_MS: u64 = 10_000;
+pub(crate) const SUPERVISOR_SUBTASK_EVENT_LIMIT: usize = 24;
 
 pub(crate) fn now_timestamp_ms() -> i64 {
     SystemTime::now()
@@ -252,6 +254,183 @@ impl SupervisorLoop {
         self.state.chat_history.clone()
     }
 
+    pub(crate) fn upsert_job(&mut self, job: SupervisorJobState) {
+        apply_update(&mut self.state, SupervisorStateUpdate::UpsertJob(job));
+    }
+
+    pub(crate) fn waiting_jobs(&self) -> Vec<SupervisorJobState> {
+        let mut waiting = self
+            .state
+            .jobs
+            .values()
+            .filter(|job| {
+                matches!(job.status, SupervisorJobStatus::WaitingForUser)
+                    && job.waiting_request_id.is_some()
+                    && !job.workspace_id.trim().is_empty()
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        waiting.sort_by(|left, right| right.requested_at_ms.cmp(&left.requested_at_ms));
+        waiting
+    }
+
+    pub(crate) fn record_route_decision(
+        &mut self,
+        route_id: &str,
+        message: String,
+        created_at_ms: i64,
+        metadata: Value,
+    ) {
+        self.push_activity(
+            format!("route_decision:{route_id}:{created_at_ms}"),
+            "route_decision",
+            message,
+            None,
+            None,
+            false,
+            created_at_ms,
+            metadata,
+        );
+    }
+
+    pub(crate) fn mark_reply_delivered(
+        &mut self,
+        job_id: &str,
+        request_id: &Value,
+        reply_preview: &str,
+        delivered_at_ms: i64,
+    ) -> Result<(), String> {
+        let Some(existing) = self.state.jobs.get(job_id).cloned() else {
+            return Err(format!("subtask `{job_id}` is not tracked"));
+        };
+        if !matches!(existing.status, SupervisorJobStatus::WaitingForUser) {
+            return Err(format!(
+                "subtask `{job_id}` is not waiting for user input anymore"
+            ));
+        }
+        let Some(waiting_request_id) = existing.waiting_request_id.as_ref() else {
+            return Err(format!(
+                "subtask `{job_id}` no longer has a pending request to answer"
+            ));
+        };
+        if waiting_request_id != request_id {
+            return Err(format!(
+                "subtask `{job_id}` is waiting on a different request id"
+            ));
+        }
+
+        let mut updated = existing.clone();
+        updated.status = SupervisorJobStatus::Running;
+        updated.waiting_request_id = None;
+        updated.waiting_question_ids.clear();
+
+        let request_key = request_value_key(&updated.workspace_id, request_id);
+        let reply_summary = summarize_text(reply_preview, 180);
+        Self::append_subtask_event(
+            &mut updated,
+            SupervisorSubtaskEvent {
+                id: format!("reply_delivered:{job_id}:{request_key}"),
+                kind: "reply_delivered".to_string(),
+                message: format!("Reply delivered to child request `{request_key}`."),
+                created_at_ms: delivered_at_ms,
+                metadata: json!({
+                    "requestKey": request_key,
+                    "replySummary": reply_summary,
+                }),
+            },
+        );
+
+        apply_update(
+            &mut self.state,
+            SupervisorStateUpdate::UpsertJob(updated.clone()),
+        );
+        apply_update(
+            &mut self.state,
+            SupervisorStateUpdate::ResolveOpenQuestion {
+                question_id: request_key.clone(),
+                resolved_at_ms: delivered_at_ms,
+            },
+        );
+
+        self.push_activity(
+            format!(
+                "reply_delivered:{}:{request_key}:{delivered_at_ms}",
+                updated.id
+            ),
+            "reply_delivered",
+            format!("Reply delivered for subtask `{}`.", updated.id),
+            Some(updated.workspace_id.clone()),
+            updated.thread_id.clone(),
+            false,
+            delivered_at_ms,
+            json!({
+                "subtaskId": updated.id,
+                "requestKey": request_key,
+                "replySummary": reply_summary,
+            }),
+        );
+        self.push_subtask_chat_message(
+            &updated,
+            format!("Reply delivered to child task request `{request_key}`. Continuing execution."),
+            "reply_delivered",
+            delivered_at_ms,
+        );
+        Ok(())
+    }
+
+    pub(crate) fn mark_reply_delivery_failed(
+        &mut self,
+        job_id: &str,
+        request_id: &Value,
+        error: &str,
+        failed_at_ms: i64,
+    ) {
+        let Some(existing) = self.state.jobs.get(job_id).cloned() else {
+            return;
+        };
+        let request_key = request_value_key(&existing.workspace_id, request_id);
+        let mut updated = existing.clone();
+        let added = Self::append_subtask_event(
+            &mut updated,
+            SupervisorSubtaskEvent {
+                id: format!("reply_delivery_failed:{job_id}:{request_key}"),
+                kind: "failed".to_string(),
+                message: format!("Reply delivery failed: {error}"),
+                created_at_ms: failed_at_ms,
+                metadata: json!({
+                    "requestKey": request_key,
+                    "error": error,
+                }),
+            },
+        );
+        apply_update(
+            &mut self.state,
+            SupervisorStateUpdate::UpsertJob(updated.clone()),
+        );
+        self.push_activity(
+            format!("reply_delivery_failed:{job_id}:{request_key}:{failed_at_ms}"),
+            "reply_delivery_failed",
+            format!("Failed to deliver reply for subtask `{job_id}`."),
+            Some(updated.workspace_id.clone()),
+            updated.thread_id.clone(),
+            true,
+            failed_at_ms,
+            json!({
+                "subtaskId": job_id,
+                "requestKey": request_key,
+                "error": error,
+            }),
+        );
+        if added {
+            self.push_subtask_chat_message(
+                &updated,
+                format!("Reply delivery failed: {error}"),
+                "reply_delivery_failed",
+                failed_at_ms,
+            );
+        }
+    }
+
     fn apply_supervisor_event(&mut self, event: SupervisorEvent) {
         match event {
             SupervisorEvent::TurnStarted {
@@ -273,12 +452,40 @@ impl SupervisorLoop {
                     format!("turn_started:{workspace_id}:{thread_id}:{turn_id}:{received_at_ms}"),
                     "turn_started",
                     "Turn started".to_string(),
-                    Some(workspace_id),
-                    Some(thread_id),
+                    Some(workspace_id.clone()),
+                    Some(thread_id.clone()),
                     false,
                     received_at_ms,
                     json!({ "turnId": turn_id, "task": task }),
                 );
+
+                if let Some(mut job) = self.job_for_event(&workspace_id, Some(&thread_id)) {
+                    job.status = SupervisorJobStatus::Running;
+                    job.thread_id = Some(thread_id.clone());
+                    job.error = None;
+                    let added = Self::append_subtask_event(
+                        &mut job,
+                        SupervisorSubtaskEvent {
+                            id: format!("turn_started:{}:{}:{turn_id}", workspace_id, thread_id),
+                            kind: "running".to_string(),
+                            message: format!("Turn `{turn_id}` started."),
+                            created_at_ms: received_at_ms,
+                            metadata: json!({ "turnId": turn_id, "task": task }),
+                        },
+                    );
+                    apply_update(
+                        &mut self.state,
+                        SupervisorStateUpdate::UpsertJob(job.clone()),
+                    );
+                    if added {
+                        self.push_subtask_chat_message(
+                            &job,
+                            format!("Progress update: turn `{turn_id}` started."),
+                            "turn_started",
+                            received_at_ms,
+                        );
+                    }
+                }
             }
             SupervisorEvent::TurnCompleted {
                 workspace_id,
@@ -309,12 +516,42 @@ impl SupervisorLoop {
                     format!("turn_completed:{workspace_id}:{thread_id}:{turn_id}:{received_at_ms}"),
                     "turn_completed",
                     "Turn completed".to_string(),
-                    Some(workspace_id),
-                    Some(thread_id),
+                    Some(workspace_id.clone()),
+                    Some(thread_id.clone()),
                     false,
                     received_at_ms,
-                    json!({ "turnId": turn_id }),
+                    json!({ "turnId": turn_id, "task": task }),
                 );
+
+                if let Some(mut job) = self.job_for_event(&workspace_id, Some(&thread_id)) {
+                    job.status = SupervisorJobStatus::Completed;
+                    job.completed_at_ms = Some(received_at_ms);
+                    job.waiting_request_id = None;
+                    job.waiting_question_ids.clear();
+                    let added = Self::append_subtask_event(
+                        &mut job,
+                        SupervisorSubtaskEvent {
+                            id: format!("turn_completed:{}:{}:{turn_id}", workspace_id, thread_id),
+                            kind: "completed".to_string(),
+                            message: "Turn completed".to_string(),
+                            created_at_ms: received_at_ms,
+                            metadata: json!({ "turnId": turn_id, "task": task }),
+                        },
+                    );
+                    apply_update(
+                        &mut self.state,
+                        SupervisorStateUpdate::UpsertJob(job.clone()),
+                    );
+                    if added {
+                        self.push_subtask_chat_message(
+                            &job,
+                            "Subtask completed. Next action: review result and send follow-up instructions if needed."
+                                .to_string(),
+                            "turn_completed",
+                            received_at_ms,
+                        );
+                    }
+                }
             }
             SupervisorEvent::ItemStarted {
                 workspace_id,
@@ -322,6 +559,7 @@ impl SupervisorLoop {
                 item_id,
                 item_type,
                 task,
+                item_content,
                 received_at_ms,
             } => {
                 self.apply_thread_activity(
@@ -336,12 +574,54 @@ impl SupervisorLoop {
                     format!("item_started:{workspace_id}:{thread_id}:{item_id}:{received_at_ms}"),
                     "item_started",
                     "Item started".to_string(),
-                    Some(workspace_id),
-                    Some(thread_id),
+                    Some(workspace_id.clone()),
+                    Some(thread_id.clone()),
                     false,
                     received_at_ms,
-                    json!({ "itemId": item_id, "itemType": item_type, "task": task }),
+                    json!({
+                        "itemId": item_id,
+                        "itemType": item_type,
+                        "task": task,
+                        "itemContent": item_content,
+                    }),
                 );
+
+                if let Some(mut job) = self.job_for_event(&workspace_id, Some(&thread_id)) {
+                    job.status = SupervisorJobStatus::Running;
+                    let added = Self::append_subtask_event(
+                        &mut job,
+                        SupervisorSubtaskEvent {
+                            id: format!("item_started:{}:{}:{item_id}", workspace_id, thread_id),
+                            kind: "running".to_string(),
+                            message: format!(
+                                "Item `{}` started.",
+                                item_type.as_deref().unwrap_or("unknown").trim()
+                            ),
+                            created_at_ms: received_at_ms,
+                            metadata: json!({
+                                "itemId": item_id,
+                                "itemType": item_type,
+                                "task": task,
+                                "itemContent": item_content,
+                            }),
+                        },
+                    );
+                    apply_update(
+                        &mut self.state,
+                        SupervisorStateUpdate::UpsertJob(job.clone()),
+                    );
+                    if added {
+                        self.push_subtask_chat_message(
+                            &job,
+                            format!(
+                                "Progress update: item `{}` started.",
+                                item_type.as_deref().unwrap_or("unknown").trim()
+                            ),
+                            "item_started",
+                            received_at_ms,
+                        );
+                    }
+                }
             }
             SupervisorEvent::ItemCompleted {
                 workspace_id,
@@ -349,6 +629,7 @@ impl SupervisorLoop {
                 item_id,
                 item_type,
                 task,
+                item_content,
                 received_at_ms,
             } => {
                 self.apply_thread_activity(
@@ -363,12 +644,150 @@ impl SupervisorLoop {
                     format!("item_completed:{workspace_id}:{thread_id}:{item_id}:{received_at_ms}"),
                     "item_completed",
                     "Item completed".to_string(),
-                    Some(workspace_id),
-                    Some(thread_id),
+                    Some(workspace_id.clone()),
+                    Some(thread_id.clone()),
                     false,
                     received_at_ms,
-                    json!({ "itemId": item_id, "itemType": item_type, "task": task }),
+                    json!({
+                        "itemId": item_id,
+                        "itemType": item_type,
+                        "task": task,
+                        "itemContent": item_content,
+                    }),
                 );
+
+                if let Some(mut job) = self.job_for_event(&workspace_id, Some(&thread_id)) {
+                    job.status = SupervisorJobStatus::Running;
+                    let added = Self::append_subtask_event(
+                        &mut job,
+                        SupervisorSubtaskEvent {
+                            id: format!("item_completed:{}:{}:{item_id}", workspace_id, thread_id),
+                            kind: "running".to_string(),
+                            message: format!(
+                                "Item `{}` completed.",
+                                item_type.as_deref().unwrap_or("unknown").trim()
+                            ),
+                            created_at_ms: received_at_ms,
+                            metadata: json!({
+                                "itemId": item_id,
+                                "itemType": item_type,
+                                "task": task,
+                                "itemContent": item_content,
+                            }),
+                        },
+                    );
+                    apply_update(
+                        &mut self.state,
+                        SupervisorStateUpdate::UpsertJob(job.clone()),
+                    );
+                    if added {
+                        let mut chat_message = format!(
+                            "Progress update: item `{}` completed.",
+                            item_type.as_deref().unwrap_or("unknown").trim()
+                        );
+                        if item_type
+                            .as_deref()
+                            .is_some_and(|value| value.eq_ignore_ascii_case("agentMessage"))
+                        {
+                            if let Some(content) = item_content.as_deref() {
+                                chat_message =
+                                    format!("Agent response: {}", summarize_text(content, 240));
+                            }
+                        }
+                        self.push_subtask_chat_message(
+                            &job,
+                            chat_message,
+                            "item_completed",
+                            received_at_ms,
+                        );
+                    }
+                }
+            }
+            SupervisorEvent::UserInputRequested {
+                workspace_id,
+                request_key,
+                request_id,
+                request_id_value,
+                thread_id,
+                turn_id,
+                item_id,
+                question,
+                question_ids,
+                params,
+                received_at_ms,
+            } => {
+                apply_update(
+                    &mut self.state,
+                    SupervisorStateUpdate::UpsertOpenQuestion(SupervisorOpenQuestion {
+                        id: request_key.clone(),
+                        workspace_id: workspace_id.clone(),
+                        thread_id: thread_id.clone().unwrap_or_else(|| "-".to_string()),
+                        question: question.clone(),
+                        created_at_ms: received_at_ms,
+                        resolved_at_ms: None,
+                        context: json!({
+                            "requestId": request_id_value,
+                            "turnId": turn_id,
+                            "itemId": item_id,
+                            "questionIds": question_ids,
+                            "params": params,
+                        }),
+                    }),
+                );
+                self.push_activity(
+                    format!("waiting_for_user:{request_key}:{received_at_ms}"),
+                    "waiting_for_user",
+                    "Child task is waiting for user input".to_string(),
+                    Some(workspace_id.clone()),
+                    thread_id.clone(),
+                    true,
+                    received_at_ms,
+                    json!({
+                        "requestKey": request_key,
+                        "requestId": request_id,
+                        "turnId": turn_id,
+                        "itemId": item_id,
+                        "question": question,
+                        "questionIds": question_ids,
+                        "params": params,
+                    }),
+                );
+
+                if let Some(mut job) = self.job_for_event(&workspace_id, thread_id.as_deref()) {
+                    job.status = SupervisorJobStatus::WaitingForUser;
+                    job.waiting_request_id = Some(request_id_value.clone());
+                    job.waiting_question_ids = question_ids.clone();
+                    let job_id = job.id.clone();
+                    let added = Self::append_subtask_event(
+                        &mut job,
+                        SupervisorSubtaskEvent {
+                            id: format!("waiting_for_user:{job_id}:{request_key}"),
+                            kind: "waiting_for_user".to_string(),
+                            message: format!("Child question: {question}"),
+                            created_at_ms: received_at_ms,
+                            metadata: json!({
+                                "requestKey": request_key,
+                                "requestId": request_id,
+                                "questionIds": question_ids,
+                            }),
+                        },
+                    );
+                    apply_update(
+                        &mut self.state,
+                        SupervisorStateUpdate::UpsertJob(job.clone()),
+                    );
+                    if added {
+                        self.push_subtask_chat_message(
+                            &job,
+                            format!(
+                                "Child task asks: {question}\nReply in this chat to continue (subtask `{}`).",
+                                job.id
+                            ),
+                            "waiting_for_user",
+                            received_at_ms,
+                        );
+                    }
+                }
             }
             SupervisorEvent::ApprovalRequested {
                 workspace_id,
@@ -412,12 +831,39 @@ impl SupervisorLoop {
                     format!("approval:{request_key}:{received_at_ms}"),
                     "needs_approval",
                     "Approval requested".to_string(),
-                    Some(workspace_id),
-                    thread_id,
+                    Some(workspace_id.clone()),
+                    thread_id.clone(),
                     true,
                     received_at_ms,
                     params,
                 );
+
+                if let Some(mut job) = self.job_for_event(&workspace_id, thread_id.as_deref()) {
+                    job.status = SupervisorJobStatus::WaitingForUser;
+                    let job_id = job.id.clone();
+                    let added = Self::append_subtask_event(
+                        &mut job,
+                        SupervisorSubtaskEvent {
+                            id: format!("approval_requested:{job_id}:{request_key}"),
+                            kind: "waiting_for_user".to_string(),
+                            message: "Approval requested".to_string(),
+                            created_at_ms: received_at_ms,
+                            metadata: json!({ "requestKey": request_key }),
+                        },
+                    );
+                    apply_update(
+                        &mut self.state,
+                        SupervisorStateUpdate::UpsertJob(job.clone()),
+                    );
+                    if added {
+                        self.push_subtask_chat_message(
+                            &job,
+                            "Child task requires approval before it can continue.".to_string(),
+                            "needs_approval",
+                            received_at_ms,
+                        );
+                    }
+                }
             }
             SupervisorEvent::Error {
                 workspace_id,
@@ -463,13 +909,51 @@ impl SupervisorLoop {
                         received_at_ms
                     ),
                     "error",
-                    message,
-                    Some(workspace_id),
-                    thread_id,
+                    message.clone(),
+                    Some(workspace_id.clone()),
+                    thread_id.clone(),
                     false,
                     received_at_ms,
                     json!({ "willRetry": will_retry, "turnId": turn_id }),
                 );
+
+                if let Some(mut job) = self.job_for_event(&workspace_id, thread_id.as_deref()) {
+                    job.status = if will_retry {
+                        SupervisorJobStatus::Running
+                    } else {
+                        SupervisorJobStatus::Failed
+                    };
+                    if !will_retry {
+                        job.error = Some(message.clone());
+                    }
+                    let added = Self::append_subtask_event(
+                        &mut job,
+                        SupervisorSubtaskEvent {
+                            id: format!(
+                                "error:{}:{}:{}",
+                                workspace_id,
+                                thread_id.as_deref().unwrap_or_default(),
+                                turn_id.as_deref().unwrap_or_default()
+                            ),
+                            kind: "failed".to_string(),
+                            message: message.clone(),
+                            created_at_ms: received_at_ms,
+                            metadata: json!({ "willRetry": will_retry, "turnId": turn_id }),
+                        },
+                    );
+                    apply_update(
+                        &mut self.state,
+                        SupervisorStateUpdate::UpsertJob(job.clone()),
+                    );
+                    if added {
+                        let chat_message = if will_retry {
+                            format!("Child task reported an error but will retry: {message}")
+                        } else {
+                            format!("Child task failed: {message}")
+                        };
+                        self.push_subtask_chat_message(&job, chat_message, "error", received_at_ms);
+                    }
+                }
             }
         }
     }
@@ -528,6 +1012,67 @@ impl SupervisorLoop {
                 workspace_id: workspace_id.to_string(),
                 ..SupervisorThreadState::default()
             })
+    }
+
+    fn job_for_event(
+        &self,
+        workspace_id: &str,
+        thread_id: Option<&str>,
+    ) -> Option<SupervisorJobState> {
+        let mut candidates = self
+            .state
+            .jobs
+            .values()
+            .filter(|job| job.workspace_id == workspace_id)
+            .filter(|job| {
+                if let Some(thread_id) = thread_id {
+                    return job.thread_id.as_deref() == Some(thread_id);
+                }
+                true
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        candidates.sort_by(|left, right| {
+            let left_priority = if left.status.is_terminal() { 0i8 } else { 1i8 };
+            let right_priority = if right.status.is_terminal() { 0i8 } else { 1i8 };
+            right_priority
+                .cmp(&left_priority)
+                .then_with(|| right.requested_at_ms.cmp(&left.requested_at_ms))
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        candidates.into_iter().next()
+    }
+
+    fn append_subtask_event(job: &mut SupervisorJobState, event: SupervisorSubtaskEvent) -> bool {
+        if job.recent_events.iter().any(|entry| entry.id == event.id) {
+            return false;
+        }
+        job.recent_events.push(event);
+        if job.recent_events.len() > SUPERVISOR_SUBTASK_EVENT_LIMIT {
+            let to_drop = job.recent_events.len() - SUPERVISOR_SUBTASK_EVENT_LIMIT;
+            job.recent_events.drain(0..to_drop);
+        }
+        true
+    }
+
+    fn push_subtask_chat_message(
+        &mut self,
+        job: &SupervisorJobState,
+        message: String,
+        kind: &str,
+        created_at_ms: i64,
+    ) {
+        let thread_label = job.thread_id.as_deref().unwrap_or("-");
+        let prefix = format!(
+            "[subtask:{} ws:{} thread:{}]",
+            job.id, job.workspace_id, thread_label
+        );
+        self.append_chat_message(SupervisorChatMessage {
+            id: format!("chat-bridge:{kind}:{}:{created_at_ms}", job.id),
+            role: SupervisorChatMessageRole::System,
+            text: format!("{prefix} {message}"),
+            created_at_ms,
+        });
     }
 
     fn apply_thread_activity(
@@ -621,10 +1166,48 @@ impl SupervisorLoop {
     }
 }
 
+fn summarize_text(value: &str, max_chars: usize) -> String {
+    let trimmed = value.trim();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed.to_string();
+    }
+    let summary = trimmed.chars().take(max_chars).collect::<String>();
+    format!("{summary}...")
+}
+
+fn request_value_key(workspace_id: &str, request_id: &Value) -> String {
+    let request_id_value = request_id
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| request_id.as_i64().map(|value| value.to_string()))
+        .or_else(|| request_id.as_u64().map(|value| value.to_string()))
+        .unwrap_or_else(|| request_id.to_string());
+    format!("{workspace_id}:{request_id_value}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn tracked_running_job(
+        job_id: &str,
+        workspace_id: &str,
+        thread_id: &str,
+    ) -> SupervisorJobState {
+        SupervisorJobState {
+            id: job_id.to_string(),
+            workspace_id: workspace_id.to_string(),
+            thread_id: Some(thread_id.to_string()),
+            description: "Tracked subtask".to_string(),
+            status: SupervisorJobStatus::Running,
+            requested_at_ms: 1,
+            started_at_ms: Some(2),
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn push_approval_event_updates_pending_approvals_and_signals() {
@@ -765,5 +1348,135 @@ mod tests {
             .expect("workspace should exist");
         assert_eq!(workspace.health, SupervisorHealth::Healthy);
         assert_eq!(workspace.active_thread_id.as_deref(), Some("thread-2"));
+    }
+
+    #[test]
+    fn child_final_result_is_bridged_into_supervisor_chat() {
+        let mut loop_state = SupervisorLoop::new(SupervisorLoopConfig::default());
+        loop_state.upsert_job(tracked_running_job("job-1", "ws-1", "thread-1"));
+
+        loop_state.apply_app_server_event(
+            "ws-1",
+            &json!({
+                "method": "item/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "itemId": "item-1",
+                    "item": {
+                        "id": "item-1",
+                        "type": "agentMessage",
+                        "text": "Deployment finished successfully"
+                    }
+                }
+            }),
+            10,
+        );
+        loop_state.apply_app_server_event(
+            "ws-1",
+            &json!({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "summary": "Deployment finished successfully"
+                }
+            }),
+            11,
+        );
+
+        let snapshot = loop_state.snapshot();
+        let job = snapshot.jobs.get("job-1").expect("job should exist");
+        assert_eq!(job.status, SupervisorJobStatus::Completed);
+        assert!(
+            job.recent_events
+                .iter()
+                .any(|event| event.kind == "completed"),
+            "expected completed event in recent subtask events"
+        );
+
+        let history = loop_state.chat_history();
+        assert!(
+            history.iter().any(|message| message
+                .text
+                .contains("Agent response: Deployment finished successfully")),
+            "expected bridged agent result in supervisor chat"
+        );
+        assert!(
+            history
+                .iter()
+                .any(|message| message.text.contains("Subtask completed.")),
+            "expected completion summary in supervisor chat"
+        );
+    }
+
+    #[test]
+    fn child_question_is_bridged_and_marks_job_waiting_for_user() {
+        let mut loop_state = SupervisorLoop::new(SupervisorLoopConfig::default());
+        loop_state.upsert_job(tracked_running_job("job-2", "ws-2", "thread-2"));
+
+        loop_state.apply_app_server_event(
+            "ws-2",
+            &json!({
+                "id": "req-7",
+                "method": "item/tool/requestUserInput",
+                "params": {
+                    "threadId": "thread-2",
+                    "turnId": "turn-2",
+                    "itemId": "item-2",
+                    "questions": [
+                        { "id": "q-1", "question": "Should I restart the service?" }
+                    ]
+                }
+            }),
+            20,
+        );
+
+        let snapshot = loop_state.snapshot();
+        let job = snapshot.jobs.get("job-2").expect("job should exist");
+        assert_eq!(job.status, SupervisorJobStatus::WaitingForUser);
+        assert_eq!(job.waiting_request_id.as_ref(), Some(&json!("req-7")));
+        assert_eq!(job.waiting_question_ids, vec!["q-1".to_string()]);
+        assert!(snapshot.open_questions.contains_key("ws-2:req-7"));
+
+        let history = loop_state.chat_history();
+        assert!(
+            history.iter().any(|message| message
+                .text
+                .contains("Child task asks: Should I restart the service?")),
+            "expected bridged child clarification in supervisor chat"
+        );
+    }
+
+    #[test]
+    fn child_error_is_bridged_and_marks_job_failed() {
+        let mut loop_state = SupervisorLoop::new(SupervisorLoopConfig::default());
+        loop_state.upsert_job(tracked_running_job("job-3", "ws-3", "thread-3"));
+
+        loop_state.apply_app_server_event(
+            "ws-3",
+            &json!({
+                "method": "error",
+                "params": {
+                    "threadId": "thread-3",
+                    "turnId": "turn-3",
+                    "error": { "message": "Build failed on step test" },
+                    "willRetry": false
+                }
+            }),
+            30,
+        );
+
+        let snapshot = loop_state.snapshot();
+        let job = snapshot.jobs.get("job-3").expect("job should exist");
+        assert_eq!(job.status, SupervisorJobStatus::Failed);
+        assert_eq!(job.error.as_deref(), Some("Build failed on step test"));
+
+        let history = loop_state.chat_history();
+        assert!(
+            history.iter().any(|message| message
+                .text
+                .contains("Child task failed: Build failed on step test")),
+            "expected bridged child failure in supervisor chat"
+        );
     }
 }

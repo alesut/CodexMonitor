@@ -20,6 +20,14 @@ pub(crate) struct SupervisorDispatchAction {
     pub(crate) prompt: String,
     #[serde(default)]
     pub(crate) dedupe_key: Option<String>,
+    #[serde(default)]
+    pub(crate) model: Option<String>,
+    #[serde(default)]
+    pub(crate) route_kind: Option<String>,
+    #[serde(default)]
+    pub(crate) route_reason: Option<String>,
+    #[serde(default)]
+    pub(crate) route_fallback: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -87,6 +95,7 @@ pub(crate) trait SupervisorDispatchBackend {
         workspace_id: &'a str,
         thread_id: &'a str,
         prompt: &'a str,
+        model: Option<&'a str>,
     ) -> DispatchFuture<'a, Result<Value, String>>;
 }
 
@@ -143,15 +152,19 @@ impl SupervisorDispatchBackend for WorkspaceSessionDispatchBackend<'_> {
         workspace_id: &'a str,
         thread_id: &'a str,
         prompt: &'a str,
+        model: Option<&'a str>,
     ) -> DispatchFuture<'a, Result<Value, String>> {
         Box::pin(async move {
             let session = self.session_for_workspace(workspace_id).await?;
-            let params = json!({
+            let mut params = json!({
                 "threadId": thread_id,
                 "input": [{ "type": "text", "text": prompt }],
                 "cwd": session.entry.path,
                 "approvalPolicy": "on-request"
             });
+            if let Some(model) = model.filter(|value| !value.trim().is_empty()) {
+                params["model"] = json!(model);
+            }
             session.send_request("turn/start", params).await
         })
     }
@@ -245,7 +258,12 @@ impl SupervisorDispatchExecutor {
         };
 
         let turn_response = match backend
-            .start_turn(&action.workspace_id, &thread_id, &action.prompt)
+            .start_turn(
+                &action.workspace_id,
+                &thread_id,
+                &action.prompt,
+                action.model.as_deref(),
+            )
             .await
         {
             Ok(value) => value,
@@ -309,6 +327,7 @@ struct NormalizedDispatchAction {
     thread_id: Option<String>,
     prompt: String,
     dedupe_token: String,
+    model: Option<String>,
 }
 
 impl NormalizedDispatchAction {
@@ -348,13 +367,17 @@ impl TryFrom<SupervisorDispatchAction> for NormalizedDispatchAction {
             .filter(|token| !token.is_empty())
             .unwrap_or(action_id.as_str())
             .to_string();
-
+        let model = value.model.and_then(|model| {
+            let trimmed = model.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        });
         Ok(Self {
             action_id,
             workspace_id,
             thread_id,
             prompt,
             dedupe_token,
+            model,
         })
     }
 }
@@ -504,6 +527,7 @@ mod tests {
             workspace_id: &'a str,
             thread_id: &'a str,
             _prompt: &'a str,
+            _model: Option<&'a str>,
         ) -> DispatchFuture<'a, Result<Value, String>> {
             Box::pin(async move {
                 self.push_call(format!("turn/start:{workspace_id}:{thread_id}"));
@@ -527,6 +551,10 @@ mod tests {
             thread_id: thread_id.map(ToOwned::to_owned),
             prompt: prompt.to_string(),
             dedupe_key: dedupe_key.map(ToOwned::to_owned),
+            model: None,
+            route_kind: None,
+            route_reason: None,
+            route_fallback: None,
         }
     }
 
@@ -836,6 +864,10 @@ mod tests {
             thread_id: Some("   ".to_string()),
             prompt: " do it ".to_string(),
             dedupe_key: Some(" dispatch ".to_string()),
+            model: Some(" gpt-5-mini ".to_string()),
+            route_kind: Some(" workspace_delegate ".to_string()),
+            route_reason: Some(" explicit route ".to_string()),
+            route_fallback: Some(" fallback ".to_string()),
         })
         .expect("normalized action");
 
@@ -844,6 +876,7 @@ mod tests {
         assert_eq!(normalized.thread_id, None);
         assert_eq!(normalized.prompt, "do it");
         assert_eq!(normalized.dedupe_token, "dispatch");
+        assert_eq!(normalized.model.as_deref(), Some("gpt-5-mini"));
     }
 
     #[test]
@@ -854,6 +887,10 @@ mod tests {
             thread_id: None,
             prompt: "Run".to_string(),
             dedupe_key: None,
+            model: None,
+            route_kind: None,
+            route_reason: None,
+            route_fallback: None,
         })
         .expect_err("missing action id should fail");
 
@@ -868,6 +905,10 @@ mod tests {
             thread_id: None,
             prompt: "Run".to_string(),
             dedupe_key: None,
+            model: None,
+            route_kind: None,
+            route_reason: None,
+            route_fallback: None,
         })
         .expect_err("missing workspace id should fail");
 
@@ -882,6 +923,10 @@ mod tests {
             thread_id: None,
             prompt: "\t".to_string(),
             dedupe_key: None,
+            model: None,
+            route_kind: None,
+            route_reason: None,
+            route_fallback: None,
         })
         .expect_err("missing prompt should fail");
 

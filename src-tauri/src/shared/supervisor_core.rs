@@ -10,6 +10,8 @@ pub(crate) mod contract;
 pub(crate) mod dispatch;
 #[path = "supervisor_core/events.rs"]
 pub(crate) mod events;
+#[path = "supervisor_core/routing.rs"]
+pub(crate) mod routing;
 #[path = "supervisor_core/service.rs"]
 pub(crate) mod service;
 #[path = "supervisor_core/loop.rs"]
@@ -43,10 +45,28 @@ pub(crate) enum SupervisorThreadStatus {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SupervisorJobStatus {
     #[default]
-    Pending,
+    #[serde(alias = "pending")]
+    Queued,
     Running,
+    WaitingForUser,
     Completed,
     Failed,
+}
+
+impl SupervisorJobStatus {
+    pub(crate) fn is_terminal(&self) -> bool {
+        matches!(self, Self::Completed | Self::Failed)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct SupervisorSubtaskEvent {
+    pub(crate) id: String,
+    pub(crate) kind: String,
+    pub(crate) message: String,
+    pub(crate) created_at_ms: i64,
+    #[serde(default = "default_json_null")]
+    pub(crate) metadata: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -120,6 +140,22 @@ pub(crate) struct SupervisorJobState {
     pub(crate) completed_at_ms: Option<i64>,
     #[serde(default)]
     pub(crate) error: Option<String>,
+    #[serde(default)]
+    pub(crate) route_kind: Option<String>,
+    #[serde(default)]
+    pub(crate) route_target: Option<String>,
+    #[serde(default)]
+    pub(crate) route_reason: Option<String>,
+    #[serde(default)]
+    pub(crate) route_fallback: Option<String>,
+    #[serde(default)]
+    pub(crate) model: Option<String>,
+    #[serde(default)]
+    pub(crate) waiting_request_id: Option<Value>,
+    #[serde(default)]
+    pub(crate) waiting_question_ids: Vec<String>,
+    #[serde(default)]
+    pub(crate) recent_events: Vec<SupervisorSubtaskEvent>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -356,10 +392,16 @@ pub(crate) fn apply_update(state: &mut SupervisorState, update: SupervisorStateU
                         job.started_at_ms = Some(at_ms);
                         job.completed_at_ms = None;
                     }
+                    SupervisorJobStatus::WaitingForUser => {
+                        if job.started_at_ms.is_none() {
+                            job.started_at_ms = Some(at_ms);
+                        }
+                        job.completed_at_ms = None;
+                    }
                     SupervisorJobStatus::Completed | SupervisorJobStatus::Failed => {
                         job.completed_at_ms = Some(at_ms);
                     }
-                    SupervisorJobStatus::Pending => {
+                    SupervisorJobStatus::Queued => {
                         job.started_at_ms = None;
                         job.completed_at_ms = None;
                     }
@@ -486,11 +528,19 @@ mod tests {
                 thread_id: Some("thread-1".to_string()),
                 dedupe_key: Some("ws-1:cm-001".to_string()),
                 description: "Implement CM-001".to_string(),
-                status: SupervisorJobStatus::Pending,
+                status: SupervisorJobStatus::Queued,
                 requested_at_ms: 1000,
                 started_at_ms: None,
                 completed_at_ms: None,
                 error: None,
+                route_kind: Some("workspace_delegate".to_string()),
+                route_target: Some("ws-1".to_string()),
+                route_reason: Some("Explicit workspace route".to_string()),
+                route_fallback: None,
+                model: None,
+                waiting_request_id: None,
+                waiting_question_ids: Vec::new(),
+                recent_events: Vec::new(),
             }),
         ];
 

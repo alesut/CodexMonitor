@@ -169,7 +169,13 @@ export type SupervisorThreadStatus =
   | "failed"
   | "completed"
   | "stalled";
-export type SupervisorJobStatus = "pending" | "running" | "completed" | "failed";
+export type SupervisorJobStatus =
+  | "queued"
+  | "pending"
+  | "running"
+  | "waiting_for_user"
+  | "completed"
+  | "failed";
 export type SupervisorSignalKind =
   | "needs_approval"
   | "failed"
@@ -214,6 +220,22 @@ export type SupervisorJobState = {
   started_at_ms: number | null;
   completed_at_ms: number | null;
   error: string | null;
+  route_kind?: string | null;
+  route_target?: string | null;
+  route_reason?: string | null;
+  route_fallback?: string | null;
+  model?: string | null;
+  waiting_request_id?: unknown | null;
+  waiting_question_ids?: string[];
+  recent_events?: SupervisorSubtaskEvent[];
+};
+
+export type SupervisorSubtaskEvent = {
+  id: string;
+  kind: string;
+  message: string;
+  created_at_ms: number;
+  metadata: unknown;
 };
 
 export type SupervisorSignal = {
@@ -292,6 +314,10 @@ export type SupervisorDispatchTurnAction = {
   prompt: string;
   thread_id?: string | null;
   dedupe_key?: string | null;
+  model?: string | null;
+  route_kind?: string | null;
+  route_reason?: string | null;
+  route_fallback?: string | null;
 };
 
 export type SupervisorActionContract = {

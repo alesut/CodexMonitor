@@ -13,6 +13,10 @@ pub(crate) struct SupervisorChatDispatchRequest {
     pub(crate) prompt: String,
     pub(crate) thread_id: Option<String>,
     pub(crate) dedupe_key: Option<String>,
+    pub(crate) model: Option<String>,
+    pub(crate) route_kind: Option<String>,
+    pub(crate) route_reason: Option<String>,
+    pub(crate) route_fallback: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,6 +76,7 @@ fn parse_dispatch_command(tokens: &[String]) -> Result<SupervisorChatDispatchReq
     let mut prompt: Option<String> = None;
     let mut thread_id: Option<String> = None;
     let mut dedupe_key: Option<String> = None;
+    let mut model: Option<String> = None;
     let mut index = 0usize;
 
     while index < tokens.len() {
@@ -115,9 +120,16 @@ fn parse_dispatch_command(tokens: &[String]) -> Result<SupervisorChatDispatchReq
                 }
                 dedupe_key = Some(next_dedupe.to_string());
             }
+            "--model" => {
+                let next_model = value.trim();
+                if next_model.is_empty() {
+                    return Err("`--model` cannot be empty".to_string());
+                }
+                model = Some(next_model.to_string());
+            }
             unknown => {
                 return Err(format!(
-                    "unknown `/dispatch` flag `{unknown}` (supported: --ws --prompt --thread --dedupe)"
+                    "unknown `/dispatch` flag `{unknown}` (supported: --ws --prompt --thread --dedupe --model)"
                 ));
             }
         }
@@ -132,6 +144,10 @@ fn parse_dispatch_command(tokens: &[String]) -> Result<SupervisorChatDispatchReq
         prompt,
         thread_id,
         dedupe_key,
+        model,
+        route_kind: None,
+        route_reason: None,
+        route_fallback: None,
     })
 }
 
@@ -200,6 +216,10 @@ pub(crate) fn build_dispatch_contract(
                 "prompt": request.prompt,
                 "thread_id": request.thread_id,
                 "dedupe_key": request.dedupe_key,
+                "model": request.model,
+                "route_kind": request.route_kind,
+                "route_reason": request.route_reason,
+                "route_fallback": request.route_fallback,
             })
         })
         .collect::<Vec<_>>();
@@ -213,14 +233,15 @@ pub(crate) fn build_dispatch_contract(
 pub(crate) fn format_help_message() -> String {
     [
         "Supported commands:",
-        "- /dispatch --ws ws-1,ws-2 --prompt \"...\" [--thread ...] [--dedupe ...]",
+        "- /dispatch --ws ws-1,ws-2 --prompt \"...\" [--thread ...] [--dedupe ...] [--model ...]",
         "- /ack <signal_id>",
         "- /status [workspace_id]",
         "- /feed [needs_input]",
         "- /help",
         "",
         "Free-form chat:",
-        "- Any message without `/` is dispatched to all connected workspaces.",
+        "- Any message without `/` is routed by Supervisor (local tool vs delegated workspace).",
+        "- When a child subtask is waiting for input, reply directly or target it with `@<subtask_id> ...`.",
     ]
     .join("\n")
 }
@@ -388,6 +409,18 @@ pub(crate) fn format_dispatch_message(
             request.prompt.trim().chars().take(140).collect::<String>()
         ),
     ];
+    if let Some(route_kind) = request.route_kind.as_deref() {
+        lines.push(format!("Route kind: {route_kind}"));
+    }
+    if let Some(route_reason) = request.route_reason.as_deref() {
+        lines.push(format!("Route reason: {route_reason}"));
+    }
+    if let Some(route_fallback) = request.route_fallback.as_deref() {
+        lines.push(format!("Route fallback: {route_fallback}"));
+    }
+    if let Some(model) = request.model.as_deref() {
+        lines.push(format!("Model: {model}"));
+    }
 
     for item in &dispatch.results {
         match item.status {
@@ -438,7 +471,7 @@ mod tests {
     #[test]
     fn parses_dispatch_command() {
         let command = parse_supervisor_chat_command(
-            "/dispatch --ws ws-1,ws-2 --prompt \"run tests\" --thread thread-7 --dedupe d-1",
+            "/dispatch --ws ws-1,ws-2 --prompt \"run tests\" --thread thread-7 --dedupe d-1 --model gpt-5-mini",
         )
         .expect("parse command");
 
@@ -453,6 +486,10 @@ mod tests {
         assert_eq!(payload.prompt, "run tests");
         assert_eq!(payload.thread_id.as_deref(), Some("thread-7"));
         assert_eq!(payload.dedupe_key.as_deref(), Some("d-1"));
+        assert_eq!(payload.model.as_deref(), Some("gpt-5-mini"));
+        assert!(payload.route_kind.is_none());
+        assert!(payload.route_reason.is_none());
+        assert!(payload.route_fallback.is_none());
     }
 
     #[test]

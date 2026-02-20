@@ -440,6 +440,16 @@
   border-color: color-mix(in srgb, var(--status-warning) 36%, transparent);
 }
 
+.supervisor-job-status.is-queued {
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
+}
+
+.supervisor-job-status.is-waiting_for_user {
+  color: var(--status-warning);
+  border-color: color-mix(in srgb, var(--status-warning) 46%, transparent);
+}
+
 .supervisor-thread-status.is-failed,
 .supervisor-job-status.is-failed {
   color: var(--status-error);
@@ -461,6 +471,39 @@
 .supervisor-job-error {
   color: var(--status-error);
   font-size: 12px;
+}
+
+.supervisor-job-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.supervisor-job-event {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  align-items: center;
+}
+
+.supervisor-job-event-kind {
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 1px 8px;
+  text-transform: lowercase;
+}
+
+.supervisor-job-event-message {
+  color: var(--text-strong);
+}
+
+.supervisor-job-event-time {
+  white-space: nowrap;
 }
 
 .supervisor-feed-filter {

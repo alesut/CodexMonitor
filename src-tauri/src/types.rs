@@ -397,6 +397,18 @@ pub(crate) struct AppSettings {
     pub(crate) active_remote_backend_id: Option<String>,
     #[serde(default, rename = "keepDaemonRunningAfterAppClose")]
     pub(crate) keep_daemon_running_after_app_close: bool,
+    #[serde(
+        default = "default_supervisor_dedicated_workspace_enabled",
+        rename = "supervisorDedicatedWorkspaceEnabled"
+    )]
+    pub(crate) supervisor_dedicated_workspace_enabled: bool,
+    #[serde(default, rename = "supervisorDedicatedWorkspaceId")]
+    pub(crate) supervisor_dedicated_workspace_id: Option<String>,
+    #[serde(
+        default = "default_supervisor_fast_model",
+        rename = "supervisorFastModel"
+    )]
+    pub(crate) supervisor_fast_model: String,
     #[serde(default = "default_access_mode", rename = "defaultAccessMode")]
     pub(crate) default_access_mode: String,
     #[serde(
@@ -660,6 +672,14 @@ impl Default for RemoteBackendProvider {
 
 fn default_access_mode() -> String {
     "current".to_string()
+}
+
+fn default_supervisor_dedicated_workspace_enabled() -> bool {
+    false
+}
+
+fn default_supervisor_fast_model() -> String {
+    "gpt-5-mini".to_string()
 }
 
 fn default_review_delivery_mode() -> String {
@@ -1103,6 +1123,10 @@ impl Default for AppSettings {
             remote_backends: default_remote_backends(),
             active_remote_backend_id: None,
             keep_daemon_running_after_app_close: false,
+            supervisor_dedicated_workspace_enabled: default_supervisor_dedicated_workspace_enabled(
+            ),
+            supervisor_dedicated_workspace_id: None,
+            supervisor_fast_model: default_supervisor_fast_model(),
             default_access_mode: "current".to_string(),
             review_delivery_mode: default_review_delivery_mode(),
             composer_model_shortcut: default_composer_model_shortcut(),
@@ -1198,6 +1222,9 @@ mod tests {
         assert!(settings.remote_backends.is_empty());
         assert!(settings.active_remote_backend_id.is_none());
         assert!(!settings.keep_daemon_running_after_app_close);
+        assert!(!settings.supervisor_dedicated_workspace_enabled);
+        assert!(settings.supervisor_dedicated_workspace_id.is_none());
+        assert_eq!(settings.supervisor_fast_model, "gpt-5-mini");
         assert_eq!(settings.default_access_mode, "current");
         assert_eq!(settings.review_delivery_mode, "inline");
         let expected_primary = if cfg!(target_os = "macos") {

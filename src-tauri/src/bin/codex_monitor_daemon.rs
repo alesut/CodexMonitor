@@ -998,6 +998,8 @@ impl DaemonState {
             &self.supervisor_loop,
             &self.supervisor_dispatch_executor,
             &self.sessions,
+            &self.workspaces,
+            &self.app_settings,
             &command,
             supervisor_loop::now_timestamp_ms(),
         )

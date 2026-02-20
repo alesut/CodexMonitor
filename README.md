@@ -43,6 +43,23 @@ CodexMonitor is a Tauri app for orchestrating multiple Codex agents across local
 - Terminal dock with multiple tabs for background commands (experimental).
 - In-app updates with toast-driven download/install, debug panel copy/clear, sound notifications, plus platform-specific window effects (macOS overlay title bar + vibrancy) and a reduced transparency toggle.
 
+## Supervisor Dedicated Workspace Mode
+
+Use dedicated mode when Supervisor should run orchestration and quick operator tasks in a predictable, fast workspace instead of selecting from all connected workspaces each turn.
+
+App settings keys:
+
+- `supervisorDedicatedWorkspaceEnabled` (`boolean`, default `false`)
+- `supervisorDedicatedWorkspaceId` (`string | null`)
+- `supervisorFastModel` (`string`, default `gpt-5-mini`)
+
+Runtime behavior:
+
+1. If dedicated mode is enabled and `supervisorDedicatedWorkspaceId` is connected/available, Supervisor routes delegated free-form tasks to that workspace and sets `supervisorFastModel` on dispatch.
+2. If dedicated mode is enabled but no dedicated workspace ID is configured, Supervisor uses the first available workspace as the temporary dedicated target and still applies `supervisorFastModel`.
+3. If dedicated mode is enabled but the configured dedicated workspace is unavailable, Supervisor falls back to standard workspace selection and emits an explicit fallback note in Supervisor chat and route metadata.
+4. If dedicated mode is disabled, Supervisor uses standard workspace routing for every delegated task.
+
 ## Requirements
 
 - Node.js + npm

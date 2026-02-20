@@ -30,6 +30,14 @@ pub(crate) struct SupervisorDispatchTurnAction {
     pub(crate) thread_id: Option<String>,
     #[serde(default)]
     pub(crate) dedupe_key: Option<String>,
+    #[serde(default)]
+    pub(crate) model: Option<String>,
+    #[serde(default)]
+    pub(crate) route_kind: Option<String>,
+    #[serde(default)]
+    pub(crate) route_reason: Option<String>,
+    #[serde(default)]
+    pub(crate) route_fallback: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +132,10 @@ fn normalize_dispatch_turn_action(
         prompt,
         thread_id: normalize_optional(action.thread_id),
         dedupe_key: normalize_optional(action.dedupe_key),
+        model: normalize_optional(action.model),
+        route_kind: normalize_optional(action.route_kind),
+        route_reason: normalize_optional(action.route_reason),
+        route_fallback: normalize_optional(action.route_fallback),
     })
 }
 
@@ -158,7 +170,11 @@ mod tests {
                     "workspace_id": " ws-1 ",
                     "thread_id": " thread-1 ",
                     "prompt": " fix failing tests ",
-                    "dedupe_key": " dispatch-1 "
+                    "dedupe_key": " dispatch-1 ",
+                    "model": " gpt-5-mini ",
+                    "route_kind": " workspace_delegate ",
+                    "route_reason": " explicit route ",
+                    "route_fallback": " fallback used "
                 },
                 {
                     "type": "dispatch_turn",
@@ -186,6 +202,22 @@ mod tests {
         assert_eq!(
             validated.dispatch_actions[0].dedupe_key.as_deref(),
             Some("dispatch-1")
+        );
+        assert_eq!(
+            validated.dispatch_actions[0].model.as_deref(),
+            Some("gpt-5-mini")
+        );
+        assert_eq!(
+            validated.dispatch_actions[0].route_kind.as_deref(),
+            Some("workspace_delegate")
+        );
+        assert_eq!(
+            validated.dispatch_actions[0].route_reason.as_deref(),
+            Some("explicit route")
+        );
+        assert_eq!(
+            validated.dispatch_actions[0].route_fallback.as_deref(),
+            Some("fallback used")
         );
         assert_eq!(validated.dispatch_actions[1].action_id, "action-2");
         assert_eq!(validated.dispatch_actions[1].dedupe_key, None);

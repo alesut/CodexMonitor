@@ -24,6 +24,7 @@ pub(crate) enum SupervisorEvent {
         item_id: String,
         item_type: Option<String>,
         task: Option<String>,
+        item_content: Option<String>,
         received_at_ms: i64,
     },
     ItemCompleted {
@@ -32,6 +33,20 @@ pub(crate) enum SupervisorEvent {
         item_id: String,
         item_type: Option<String>,
         task: Option<String>,
+        item_content: Option<String>,
+        received_at_ms: i64,
+    },
+    UserInputRequested {
+        workspace_id: String,
+        request_key: String,
+        request_id: String,
+        request_id_value: Value,
+        thread_id: Option<String>,
+        turn_id: Option<String>,
+        item_id: Option<String>,
+        question: String,
+        question_ids: Vec<String>,
+        params: Value,
         received_at_ms: i64,
     },
     ApprovalRequested {
@@ -77,6 +92,9 @@ pub(crate) fn normalize_app_server_event(
         "turn/completed" => normalize_turn_event(workspace_id, &params, received_at_ms, false),
         "item/started" => normalize_item_event(workspace_id, &params, received_at_ms, true),
         "item/completed" => normalize_item_event(workspace_id, &params, received_at_ms, false),
+        "item/tool/requestUserInput" => {
+            normalize_user_input_event(workspace_id, message, &params, received_at_ms)
+        }
         "error" => normalize_error_event(workspace_id, &params, received_at_ms),
         _ if method.ends_with("requestApproval") => {
             normalize_approval_event(workspace_id, method, message, &params, received_at_ms)
@@ -130,6 +148,7 @@ fn normalize_item_event(
         .or_else(|| item.and_then(|value| extract_field(value, &["id"])))?;
     let item_type = item.and_then(|value| extract_field(value, &["type"]));
     let task = extract_task(params).or_else(|| item.and_then(extract_task));
+    let item_content = item.and_then(extract_item_content);
 
     if started {
         Some(SupervisorEvent::ItemStarted {
@@ -138,6 +157,7 @@ fn normalize_item_event(
             item_id,
             item_type,
             task,
+            item_content,
             received_at_ms,
         })
     } else {
@@ -147,9 +167,40 @@ fn normalize_item_event(
             item_id,
             item_type,
             task,
+            item_content,
             received_at_ms,
         })
     }
+}
+
+fn normalize_user_input_event(
+    workspace_id: &str,
+    message: &Map<String, Value>,
+    params: &Map<String, Value>,
+    received_at_ms: i64,
+) -> Option<SupervisorEvent> {
+    let request_id_value = extract_request_id_value(message)?;
+    let request_id = request_id_to_string(&request_id_value)?;
+    let thread_id = extract_field(params, &["threadId", "thread_id"]);
+    let turn_id = extract_field(params, &["turnId", "turn_id"]);
+    let item_id = extract_field(params, &["itemId", "item_id"]);
+    let question_ids = extract_question_ids(params);
+    let question = extract_primary_question(params)
+        .unwrap_or_else(|| "Child task is waiting for user input.".to_string());
+
+    Some(SupervisorEvent::UserInputRequested {
+        workspace_id: workspace_id.to_string(),
+        request_key: format!("{workspace_id}:{request_id}"),
+        request_id,
+        request_id_value,
+        thread_id,
+        turn_id,
+        item_id,
+        question,
+        question_ids,
+        params: Value::Object(params.clone()),
+        received_at_ms,
+    })
 }
 
 fn normalize_approval_event(
@@ -229,14 +280,30 @@ fn extract_bool(map: &Map<String, Value>, keys: &[&str]) -> Option<bool> {
 }
 
 fn extract_request_id(message: &Map<String, Value>) -> Option<String> {
+    let id = extract_request_id_value(message)?;
+    request_id_to_string(&id)
+}
+
+fn extract_request_id_value(message: &Map<String, Value>) -> Option<Value> {
     let id = message.get("id")?;
-    if let Some(number) = id.as_i64() {
+    if id.is_i64() || id.is_u64() || id.is_string() {
+        return Some(id.clone());
+    }
+    None
+}
+
+fn request_id_to_string(value: &Value) -> Option<String> {
+    if let Some(number) = value.as_i64() {
         return Some(number.to_string());
     }
-    if let Some(number) = id.as_u64() {
+    if let Some(number) = value.as_u64() {
         return Some(number.to_string());
     }
-    id.as_str().map(|value| value.trim().to_string())
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
 }
 
 fn extract_task(map: &Map<String, Value>) -> Option<String> {
@@ -244,6 +311,44 @@ fn extract_task(map: &Map<String, Value>) -> Option<String> {
         map,
         &["currentTask", "current_task", "summary", "preview", "title"],
     )
+}
+
+fn extract_item_content(map: &Map<String, Value>) -> Option<String> {
+    extract_field(
+        map,
+        &[
+            "text",
+            "content",
+            "output",
+            "outputText",
+            "summary",
+            "preview",
+            "title",
+        ],
+    )
+}
+
+fn extract_primary_question(params: &Map<String, Value>) -> Option<String> {
+    let questions = params.get("questions")?.as_array()?;
+    questions
+        .iter()
+        .find_map(|entry| {
+            entry
+                .as_object()
+                .and_then(|question| extract_field(question, &["question", "header"]))
+        })
+        .map(|value| value.trim().to_string())
+}
+
+fn extract_question_ids(params: &Map<String, Value>) -> Vec<String> {
+    let Some(questions) = params.get("questions").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    questions
+        .iter()
+        .filter_map(Value::as_object)
+        .filter_map(|question| extract_field(question, &["id"]))
+        .collect::<Vec<_>>()
 }
 
 #[cfg(test)]
@@ -306,7 +411,60 @@ mod tests {
                 item_id: "item-2".to_string(),
                 item_type: Some("agentMessage".to_string()),
                 task: Some("Answer user".to_string()),
+                item_content: Some("Answer user".to_string()),
                 received_at_ms: 222,
+            })
+        );
+    }
+
+    #[test]
+    fn normalizes_user_input_request_event() {
+        let event = normalize_app_server_event(
+            "ws-2",
+            &json!({
+                "id": 15,
+                "method": "item/tool/requestUserInput",
+                "params": {
+                    "threadId": "thread-2",
+                    "turnId": "turn-2",
+                    "itemId": "item-2",
+                    "questions": [
+                        {
+                            "id": "q-1",
+                            "header": "Need your input",
+                            "question": "Pick the environment"
+                        }
+                    ]
+                }
+            }),
+            260,
+        );
+
+        assert_eq!(
+            event,
+            Some(SupervisorEvent::UserInputRequested {
+                workspace_id: "ws-2".to_string(),
+                request_key: "ws-2:15".to_string(),
+                request_id: "15".to_string(),
+                request_id_value: json!(15),
+                thread_id: Some("thread-2".to_string()),
+                turn_id: Some("turn-2".to_string()),
+                item_id: Some("item-2".to_string()),
+                question: "Pick the environment".to_string(),
+                question_ids: vec!["q-1".to_string()],
+                params: json!({
+                    "threadId": "thread-2",
+                    "turnId": "turn-2",
+                    "itemId": "item-2",
+                    "questions": [
+                        {
+                            "id": "q-1",
+                            "header": "Need your input",
+                            "question": "Pick the environment"
+                        }
+                    ]
+                }),
+                received_at_ms: 260,
             })
         );
     }

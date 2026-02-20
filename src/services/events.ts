@@ -25,6 +25,7 @@ const SUPERVISOR_METHODS = new Set<string>([
   "turn/completed",
   "item/started",
   "item/completed",
+  "item/tool/requestUserInput",
   "error",
   "codex/connected",
 ]);
