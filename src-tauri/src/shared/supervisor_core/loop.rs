@@ -200,6 +200,10 @@ impl SupervisorLoop {
                 continue;
             }
 
+            if !self.workspace_has_active_workload(&snapshot.workspace_id) {
+                continue;
+            }
+
             match next_health {
                 SupervisorHealth::Stale => {
                     self.push_signal(
@@ -985,6 +989,31 @@ impl SupervisorLoop {
         }
     }
 
+    fn workspace_has_active_workload(&self, workspace_id: &str) -> bool {
+        let has_active_job = self.state.jobs.values().any(|job| {
+            job.workspace_id == workspace_id
+                && matches!(
+                    job.status,
+                    SupervisorJobStatus::Queued
+                        | SupervisorJobStatus::Running
+                        | SupervisorJobStatus::WaitingForUser
+                )
+        });
+        if has_active_job {
+            return true;
+        }
+
+        self.state.threads.values().any(|thread| {
+            thread.workspace_id == workspace_id
+                && matches!(
+                    thread.status,
+                    SupervisorThreadStatus::Running
+                        | SupervisorThreadStatus::WaitingInput
+                        | SupervisorThreadStatus::Stalled
+                )
+        })
+    }
+
     fn record_workspace_heartbeat(&mut self, workspace_id: &str, timestamp_ms: i64) {
         self.workspace_last_event_at_ms
             .insert(workspace_id.to_string(), timestamp_ms);
@@ -1240,7 +1269,7 @@ mod tests {
     }
 
     #[test]
-    fn pull_health_check_emits_stale_and_disconnected_signals_once() {
+    fn pull_health_check_emits_stale_and_disconnected_signals_for_active_workspace() {
         let mut loop_state = SupervisorLoop::new(SupervisorLoopConfig {
             stale_after_ms: 10,
             disconnected_after_ms: 20,
@@ -1289,6 +1318,80 @@ mod tests {
 
         loop_state.run_health_check(&input, 126);
         assert_eq!(loop_state.snapshot().signals.len(), 2);
+    }
+
+    #[test]
+    fn pull_health_check_suppresses_noise_for_idle_workspace() {
+        let mut loop_state = SupervisorLoop::new(SupervisorLoopConfig {
+            stale_after_ms: 10,
+            disconnected_after_ms: 20,
+            activity_feed_limit: 100,
+        });
+
+        loop_state.apply_app_server_event(
+            "ws-idle",
+            &json!({
+                "method": "codex/connected",
+            }),
+            100,
+        );
+
+        let input = vec![SupervisorWorkspaceHealthInput {
+            workspace_id: "ws-idle".to_string(),
+            workspace_name: Some("Idle Workspace".to_string()),
+            connected: true,
+        }];
+
+        loop_state.run_health_check(&input, 112);
+        let stale_snapshot = loop_state.snapshot();
+        assert_eq!(stale_snapshot.signals.len(), 0);
+        assert_eq!(
+            stale_snapshot
+                .workspaces
+                .get("ws-idle")
+                .expect("workspace should exist")
+                .health,
+            SupervisorHealth::Stale
+        );
+
+        loop_state.run_health_check(&input, 125);
+        let disconnected_snapshot = loop_state.snapshot();
+        assert_eq!(disconnected_snapshot.signals.len(), 0);
+        assert_eq!(
+            disconnected_snapshot
+                .workspaces
+                .get("ws-idle")
+                .expect("workspace should exist")
+                .health,
+            SupervisorHealth::Disconnected
+        );
+    }
+
+    #[test]
+    fn pull_health_check_emits_disconnected_signal_when_active_workspace_loses_connection() {
+        let mut loop_state = SupervisorLoop::new(SupervisorLoopConfig::default());
+        loop_state.apply_app_server_event(
+            "ws-active",
+            &json!({
+                "method": "turn/started",
+                "params": {
+                    "threadId": "thread-active",
+                    "turnId": "turn-active"
+                }
+            }),
+            100,
+        );
+
+        let input = vec![SupervisorWorkspaceHealthInput {
+            workspace_id: "ws-active".to_string(),
+            workspace_name: Some("Active Workspace".to_string()),
+            connected: false,
+        }];
+
+        loop_state.run_health_check(&input, 101);
+        let snapshot = loop_state.snapshot();
+        assert_eq!(snapshot.signals.len(), 1);
+        assert_eq!(snapshot.signals[0].kind, SupervisorSignalKind::Disconnected);
     }
 
     #[test]
