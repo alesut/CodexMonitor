@@ -528,241 +528,251 @@ export function SupervisorHome({
       />
 
       <div className="supervisor-grid">
-        <section className="supervisor-section">
-          <div className="supervisor-section-header">
-            <h2>Workspace status</h2>
-          </div>
-          {workspaceList.length === 0 ? (
-            <p className="supervisor-home-empty">No workspace status yet.</p>
-          ) : (
-            <div className="supervisor-workspace-list">
-              {workspaceList.map((workspace) => (
-                <article className="supervisor-workspace-card" key={workspace.id}>
-                  <header className="supervisor-workspace-header">
-                    <div className="supervisor-workspace-name">{workspace.name}</div>
-                    <span className={`supervisor-health is-${workspace.health}`}>
-                      {workspace.health}
-                    </span>
-                  </header>
-                  <dl className="supervisor-workspace-meta">
-                    <div>
-                      <dt>Current task</dt>
-                      <dd>{workspace.current_task || "None"}</dd>
-                    </div>
-                    <div>
-                      <dt>Next step</dt>
-                      <dd>{workspace.next_expected_step || "Pending update"}</dd>
-                    </div>
-                    <div>
-                      <dt>Last activity</dt>
-                      <dd>{formatSupervisorTime(workspace.last_activity_at_ms)}</dd>
-                    </div>
-                  </dl>
-                  <div className="supervisor-blockers">
-                    {workspace.blockers.length > 0
-                      ? `Blockers: ${workspace.blockers.join(", ")}`
-                      : "Blockers: none"}
-                  </div>
-                </article>
-              ))}
+        <div className="supervisor-grid-primary">
+          <section className="supervisor-section">
+            <div className="supervisor-section-header">
+              <h2>Workspace status</h2>
             </div>
-          )}
-        </section>
+            {workspaceList.length === 0 ? (
+              <p className="supervisor-home-empty">No workspace status yet.</p>
+            ) : (
+              <div className="supervisor-workspace-list">
+                {workspaceList.map((workspace) => (
+                  <article className="supervisor-workspace-card" key={workspace.id}>
+                    <header className="supervisor-workspace-header">
+                      <div className="supervisor-workspace-name">{workspace.name}</div>
+                      <span className={`supervisor-health is-${workspace.health}`}>
+                        {workspace.health}
+                      </span>
+                    </header>
+                    <dl className="supervisor-workspace-meta">
+                      <div>
+                        <dt>Current task</dt>
+                        <dd>{workspace.current_task || "None"}</dd>
+                      </div>
+                      <div>
+                        <dt>Next step</dt>
+                        <dd>{workspace.next_expected_step || "Pending update"}</dd>
+                      </div>
+                      <div>
+                        <dt>Last activity</dt>
+                        <dd>{formatSupervisorTime(workspace.last_activity_at_ms)}</dd>
+                      </div>
+                    </dl>
+                    <div className="supervisor-blockers">
+                      {workspace.blockers.length > 0
+                        ? `Blockers: ${workspace.blockers.join(", ")}`
+                        : "Blockers: none"}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
 
-        <section className="supervisor-section">
-          <div className="supervisor-section-header">
-            <h2>Thread activity</h2>
-            <span>{threadList.length} total</span>
-          </div>
-          {threadList.length === 0 ? (
-            <p className="supervisor-home-empty">No active thread telemetry yet.</p>
-          ) : (
-            <ul className="supervisor-thread-list">
-              {threadList.map((thread) => (
-                <li key={thread.id} className="supervisor-thread-item">
-                  <div className="supervisor-thread-top">
-                    <span className="supervisor-thread-name">
-                      {thread.name?.trim() || `Thread ${thread.id}`}
-                    </span>
-                    <span className={`supervisor-thread-status is-${thread.status}`}>
-                      {thread.status}
-                    </span>
-                  </div>
-                  <div className="supervisor-thread-line">
-                    <strong>Task:</strong> {thread.current_task || "None"}
-                  </div>
-                  <div className="supervisor-thread-line">
-                    <strong>Next:</strong> {thread.next_expected_step || "Pending update"}
-                  </div>
-                  <div className="supervisor-thread-line">
-                    <strong>Last:</strong> {formatSupervisorTime(thread.last_activity_at_ms)}
-                  </div>
-                  <div className="supervisor-thread-line">
-                    <strong>Blockers:</strong>{" "}
-                    {thread.blockers.length > 0 ? thread.blockers.join(", ") : "none"}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="supervisor-section">
-          <div className="supervisor-section-header">
-            <h2>Dispatch jobs</h2>
-            <span>{jobList.length} tracked</span>
-          </div>
-          {jobList.length === 0 ? (
-            <p className="supervisor-home-empty">No jobs dispatched yet.</p>
-          ) : (
-            <ul className="supervisor-job-list">
-              {jobList.map((job) => {
-                const normalizedStatusClass = normalizeJobStatusClass(job.status);
-                const normalizedStatusLabel = normalizeJobStatusLabel(job.status);
-                const recentEvents = [...(job.recent_events ?? [])]
-                  .slice(-4)
-                  .reverse();
-                return (
-                  <li key={job.id} className="supervisor-job-item">
-                    <div className="supervisor-job-top">
-                      <span className="supervisor-job-name">{job.description}</span>
-                      <span className={`supervisor-job-status is-${normalizedStatusClass}`}>
-                        {normalizedStatusLabel}
+          <section className="supervisor-section">
+            <div className="supervisor-section-header">
+              <h2>Thread activity</h2>
+              <span>{threadList.length} total</span>
+            </div>
+            {threadList.length === 0 ? (
+              <p className="supervisor-home-empty">No active thread telemetry yet.</p>
+            ) : (
+              <ul className="supervisor-thread-list">
+                {threadList.map((thread) => (
+                  <li key={thread.id} className="supervisor-thread-item">
+                    <div className="supervisor-thread-top">
+                      <span className="supervisor-thread-name">
+                        {thread.name?.trim() || `Thread ${thread.id}`}
+                      </span>
+                      <span className={`supervisor-thread-status is-${thread.status}`}>
+                        {thread.status}
                       </span>
                     </div>
-                    <div className="supervisor-job-meta">
-                      Workspace: {job.workspace_id} ·{" "}
-                      {job.thread_id ? `Thread ${job.thread_id}` : "Thread pending"}
+                    <div className="supervisor-thread-line">
+                      <strong>Task:</strong> {thread.current_task || "None"}
                     </div>
-                    <div className="supervisor-job-meta">
-                      Route: {job.route_kind ?? "workspace_delegate"} · Target:{" "}
-                      {job.route_target ?? job.workspace_id}
-                      {job.model ? ` · Model ${job.model}` : ""}
-                      {job.effort ? ` · Effort ${job.effort}` : ""}
-                      {job.access_mode ? ` · Access ${job.access_mode}` : ""}
+                    <div className="supervisor-thread-line">
+                      <strong>Next:</strong> {thread.next_expected_step || "Pending update"}
                     </div>
-                    {job.route_reason ? (
-                      <div className="supervisor-job-meta">Reason: {job.route_reason}</div>
-                    ) : null}
-                    {job.route_fallback ? (
-                      <div className="supervisor-job-meta">Fallback: {job.route_fallback}</div>
-                    ) : null}
-                    {recentEvents.length > 0 ? (
-                      <ul className="supervisor-job-events">
-                        {recentEvents.map((event) => (
-                          <li key={event.id} className="supervisor-job-event">
-                            <span className="supervisor-job-event-kind">{event.kind}</span>
-                            <span className="supervisor-job-event-message">{event.message}</span>
-                            <span className="supervisor-job-event-time">
-                              {formatSupervisorTime(event.created_at_ms)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    {job.error ? (
-                      <div className="supervisor-job-error">Error: {job.error}</div>
-                    ) : null}
+                    <div className="supervisor-thread-line">
+                      <strong>Last:</strong> {formatSupervisorTime(thread.last_activity_at_ms)}
+                    </div>
+                    <div className="supervisor-thread-line">
+                      <strong>Blockers:</strong>{" "}
+                      {thread.blockers.length > 0 ? thread.blockers.join(", ") : "none"}
+                    </div>
                   </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
 
-        <section className="supervisor-section">
-          <div className="supervisor-section-header">
-            <h2>Live activity feed</h2>
-            <span>{feedTotal} entries</span>
-          </div>
-          <div className="supervisor-feed-filter" role="group" aria-label="Feed filter">
-            <button
-              type="button"
-              className={`supervisor-feed-filter-button${!needsInputOnly ? " is-active" : ""}`}
-              onClick={() => setNeedsInputOnly(false)}
-            >
-              All activity
-            </button>
-            <button
-              type="button"
-              className={`supervisor-feed-filter-button${needsInputOnly ? " is-active" : ""}`}
-              onClick={() => setNeedsInputOnly(true)}
-            >
-              Needs my input
-            </button>
-          </div>
-          {feedItems.length === 0 ? (
-            <p className="supervisor-home-empty">No feed items for this filter.</p>
-          ) : (
-            <ul className="supervisor-feed-list">
-              {feedItems.map((entry) => (
-                <li key={entry.id} className="supervisor-feed-item">
-                  <div className="supervisor-feed-main">
-                    <span className="supervisor-feed-message">{entry.message}</span>
-                    <span className="supervisor-feed-time">
-                      {formatSupervisorTime(entry.created_at_ms)}
-                    </span>
-                  </div>
-                  <div className="supervisor-feed-meta">
-                    <span className="supervisor-feed-kind">{entry.kind}</span>
-                    <span>
-                      {entry.workspace_id ?? "global"}
-                      {entry.thread_id ? ` · ${entry.thread_id}` : ""}
-                    </span>
-                    {entry.needs_input ? (
-                      <span className="supervisor-feed-needs-input">Needs input</span>
-                    ) : null}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <div className="supervisor-grid-secondary">
+          <details
+            className="supervisor-section supervisor-section-collapsible"
+            open={jobList.length > 0}
+          >
+            <summary className="supervisor-section-summary">
+              <span>Dispatch jobs</span>
+              <span>{jobList.length} tracked</span>
+            </summary>
+            {jobList.length === 0 ? (
+              <p className="supervisor-home-empty">No jobs dispatched yet.</p>
+            ) : (
+              <ul className="supervisor-job-list">
+                {jobList.map((job) => {
+                  const normalizedStatusClass = normalizeJobStatusClass(job.status);
+                  const normalizedStatusLabel = normalizeJobStatusLabel(job.status);
+                  const recentEvents = [...(job.recent_events ?? [])]
+                    .slice(-4)
+                    .reverse();
+                  return (
+                    <li key={job.id} className="supervisor-job-item">
+                      <div className="supervisor-job-top">
+                        <span className="supervisor-job-name">{job.description}</span>
+                        <span className={`supervisor-job-status is-${normalizedStatusClass}`}>
+                          {normalizedStatusLabel}
+                        </span>
+                      </div>
+                      <div className="supervisor-job-meta">
+                        Workspace: {job.workspace_id} ·{" "}
+                        {job.thread_id ? `Thread ${job.thread_id}` : "Thread pending"}
+                      </div>
+                      <div className="supervisor-job-meta">
+                        Route: {job.route_kind ?? "workspace_delegate"} · Target:{" "}
+                        {job.route_target ?? job.workspace_id}
+                        {job.model ? ` · Model ${job.model}` : ""}
+                        {job.effort ? ` · Effort ${job.effort}` : ""}
+                        {job.access_mode ? ` · Access ${job.access_mode}` : ""}
+                      </div>
+                      {job.route_reason ? (
+                        <div className="supervisor-job-meta">Reason: {job.route_reason}</div>
+                      ) : null}
+                      {job.route_fallback ? (
+                        <div className="supervisor-job-meta">Fallback: {job.route_fallback}</div>
+                      ) : null}
+                      {recentEvents.length > 0 ? (
+                        <ul className="supervisor-job-events">
+                          {recentEvents.map((event) => (
+                            <li key={event.id} className="supervisor-job-event">
+                              <span className="supervisor-job-event-kind">{event.kind}</span>
+                              <span className="supervisor-job-event-message">{event.message}</span>
+                              <span className="supervisor-job-event-time">
+                                {formatSupervisorTime(event.created_at_ms)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {job.error ? (
+                        <div className="supervisor-job-error">Error: {job.error}</div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </details>
 
-        <section className="supervisor-section">
-          <div className="supervisor-section-header">
-            <h2>Recent signals</h2>
-            <span>{signalList.length} total</span>
-          </div>
-          {signalList.length === 0 ? (
-            <p className="supervisor-home-empty">No supervisor signals.</p>
-          ) : (
-            <ul className="supervisor-signal-list">
-              {signalList.map((signal) => {
-                const isPending = signal.acknowledged_at_ms === null;
-                const severity = signalSeverity(signal.kind);
-                return (
-                  <li key={signal.id} className="supervisor-signal-item">
-                    <div className="supervisor-signal-main">
-                      <span className={`supervisor-signal-severity is-${severity}`}>
-                        {formatSeverityLabel(severity)}
+          <details
+            className="supervisor-section supervisor-section-collapsible"
+            open={feedItems.length > 0}
+          >
+            <summary className="supervisor-section-summary">
+              <span>Live activity feed</span>
+              <span>{feedTotal} entries</span>
+            </summary>
+            <div className="supervisor-feed-filter" role="group" aria-label="Feed filter">
+              <button
+                type="button"
+                className={`supervisor-feed-filter-button${!needsInputOnly ? " is-active" : ""}`}
+                onClick={() => setNeedsInputOnly(false)}
+              >
+                All activity
+              </button>
+              <button
+                type="button"
+                className={`supervisor-feed-filter-button${needsInputOnly ? " is-active" : ""}`}
+                onClick={() => setNeedsInputOnly(true)}
+              >
+                Needs my input
+              </button>
+            </div>
+            {feedItems.length === 0 ? (
+              <p className="supervisor-home-empty">No feed items for this filter.</p>
+            ) : (
+              <ul className="supervisor-feed-list">
+                {feedItems.map((entry) => (
+                  <li key={entry.id} className="supervisor-feed-item">
+                    <div className="supervisor-feed-main">
+                      <span className="supervisor-feed-message">{entry.message}</span>
+                      <span className="supervisor-feed-time">
+                        {formatSupervisorTime(entry.created_at_ms)}
                       </span>
-                      <span className={`supervisor-signal-kind is-${severity}`}>
-                        {formatSignalKindLabel(signal.kind)}
-                      </span>
-                      <span className="supervisor-signal-message">{signal.message}</span>
                     </div>
-                    <div className="supervisor-signal-meta">
+                    <div className="supervisor-feed-meta">
+                      <span className="supervisor-feed-kind">{entry.kind}</span>
                       <span>
-                        {formatSignalLocation(signal.workspace_id, signal.thread_id)} ·{" "}
-                        {formatSupervisorTime(signal.created_at_ms)}
+                        {entry.workspace_id ?? "global"}
+                        {entry.thread_id ? ` · ${entry.thread_id}` : ""}
                       </span>
-                      <span
-                        className={
-                          isPending
-                            ? "supervisor-signal-pending"
-                            : "supervisor-signal-acked"
-                        }
-                      >
-                        {isPending ? "Pending" : "Acknowledged"}
-                      </span>
+                      {entry.needs_input ? (
+                        <span className="supervisor-feed-needs-input">Needs input</span>
+                      ) : null}
                     </div>
                   </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+                ))}
+              </ul>
+            )}
+          </details>
+
+          <details className="supervisor-section supervisor-section-collapsible">
+            <summary className="supervisor-section-summary">
+              <span>Recent signals</span>
+              <span>{signalList.length} total</span>
+            </summary>
+            {signalList.length === 0 ? (
+              <p className="supervisor-home-empty">No supervisor signals.</p>
+            ) : (
+              <ul className="supervisor-signal-list">
+                {signalList.map((signal) => {
+                  const isPending = signal.acknowledged_at_ms === null;
+                  const severity = signalSeverity(signal.kind);
+                  return (
+                    <li key={signal.id} className="supervisor-signal-item">
+                      <div className="supervisor-signal-main">
+                        <span className={`supervisor-signal-severity is-${severity}`}>
+                          {formatSeverityLabel(severity)}
+                        </span>
+                        <span className={`supervisor-signal-kind is-${severity}`}>
+                          {formatSignalKindLabel(signal.kind)}
+                        </span>
+                        <span className="supervisor-signal-message">{signal.message}</span>
+                      </div>
+                      <div className="supervisor-signal-meta">
+                        <span>
+                          {formatSignalLocation(signal.workspace_id, signal.thread_id)} ·{" "}
+                          {formatSupervisorTime(signal.created_at_ms)}
+                        </span>
+                        <span
+                          className={
+                            isPending
+                              ? "supervisor-signal-pending"
+                              : "supervisor-signal-acked"
+                          }
+                        >
+                          {isPending ? "Pending" : "Acknowledged"}
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </details>
+        </div>
       </div>
     </div>
   );
