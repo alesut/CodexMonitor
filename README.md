@@ -60,6 +60,25 @@ Runtime behavior:
 3. If dedicated mode is enabled but the configured dedicated workspace is unavailable, Supervisor falls back to standard workspace selection and emits an explicit fallback note in Supervisor chat and route metadata.
 4. If dedicated mode is disabled, Supervisor uses standard workspace routing for every delegated task.
 
+## Supervisor Telegram Bridge (Daemon)
+
+Supervisor can be controlled via Telegram (commands + free-form RU/EN text routed through Supervisor chat) when running `codex-monitor-daemon`.
+
+Set these environment variables before launching the daemon:
+
+- `SUPERVISOR_TELEGRAM_BOT_TOKEN` (required) — Telegram bot token from BotFather.
+- `SUPERVISOR_TELEGRAM_ALLOWED_USER_ID` (required) — single admin Telegram user ID allowed to control Supervisor.
+- `SUPERVISOR_TELEGRAM_ALLOWED_CHAT_ID` (optional, recommended) — lock bot access to one chat ID for stricter safety.
+- `SUPERVISOR_TELEGRAM_POLL_TIMEOUT_SECONDS` (optional, default `30`) — long-poll timeout.
+- `SUPERVISOR_TELEGRAM_SYNC_INTERVAL_SECONDS` (optional, default `5`) — interval between Supervisor signal notification syncs.
+
+Behavior:
+
+1. Incoming Telegram text is forwarded to Supervisor chat (`/help`, slash commands, and free-form natural language all supported).
+2. Bot replies with the latest Supervisor system response.
+3. Unacknowledged Supervisor signals are pushed as Telegram notifications.
+4. Supervisor state is already persisted in daemon mode (`supervisor-state.json`), so Telegram workflow survives daemon restarts.
+
 ## Requirements
 
 - Node.js + npm

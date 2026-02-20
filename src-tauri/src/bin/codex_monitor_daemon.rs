@@ -17,6 +17,8 @@ mod file_policy;
 mod git_utils;
 #[path = "codex_monitor_daemon/rpc.rs"]
 mod rpc;
+#[path = "codex_monitor_daemon/telegram.rs"]
+mod telegram;
 #[path = "../rules.rs"]
 mod rules;
 #[path = "../shared/mod.rs"]
@@ -1909,6 +1911,17 @@ fn main() {
                     tokio::time::sleep(interval).await;
                 }
             });
+        }
+
+        if let Some(telegram_config) = telegram::TelegramBridgeConfig::from_env() {
+            let state = Arc::clone(&state);
+            tokio::spawn(async move {
+                telegram::run(state, telegram_config).await;
+            });
+        } else {
+            eprintln!(
+                "telegram bridge disabled: set SUPERVISOR_TELEGRAM_BOT_TOKEN and SUPERVISOR_TELEGRAM_ALLOWED_USER_ID"
+            );
         }
 
         let listener = match TcpListener::bind(config.listen).await {
