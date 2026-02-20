@@ -166,4 +166,39 @@ describe("SupervisorHome", () => {
       });
     });
   });
+
+  it("renders dispatch job model/effort/access metadata", async () => {
+    const snapshotWithJob = cloneSnapshot();
+    snapshotWithJob.jobs = {
+      "job-1": {
+        id: "job-1",
+        workspace_id: "ws-1",
+        thread_id: "thread-1",
+        dedupe_key: "dedupe-1",
+        description: "Run smoke tests",
+        status: "running",
+        requested_at_ms: Date.now(),
+        started_at_ms: Date.now(),
+        completed_at_ms: null,
+        error: null,
+        route_kind: "workspace_delegate",
+        route_target: "ws-1",
+        route_reason: "Explicit route",
+        route_fallback: null,
+        model: "gpt-5-mini",
+        effort: "high",
+        access_mode: "full-access",
+        waiting_request_id: null,
+        waiting_question_ids: [],
+        recent_events: [],
+      },
+    };
+    vi.mocked(getSupervisorSnapshot).mockResolvedValueOnce(snapshotWithJob);
+
+    render(<SupervisorHome {...supervisorHomeProps} />);
+
+    expect(await screen.findByText(/Model gpt-5-mini/)).toBeTruthy();
+    expect(screen.getByText(/Effort high/)).toBeTruthy();
+    expect(screen.getByText(/Access full-access/)).toBeTruthy();
+  });
 });

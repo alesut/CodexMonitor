@@ -23,6 +23,10 @@ pub(crate) struct SupervisorDispatchAction {
     #[serde(default)]
     pub(crate) model: Option<String>,
     #[serde(default)]
+    pub(crate) effort: Option<String>,
+    #[serde(default)]
+    pub(crate) access_mode: Option<String>,
+    #[serde(default)]
     pub(crate) route_kind: Option<String>,
     #[serde(default)]
     pub(crate) route_reason: Option<String>,
@@ -96,6 +100,8 @@ pub(crate) trait SupervisorDispatchBackend {
         thread_id: &'a str,
         prompt: &'a str,
         model: Option<&'a str>,
+        effort: Option<&'a str>,
+        access_mode: Option<&'a str>,
     ) -> DispatchFuture<'a, Result<Value, String>>;
 }
 
@@ -153,20 +159,57 @@ impl SupervisorDispatchBackend for WorkspaceSessionDispatchBackend<'_> {
         thread_id: &'a str,
         prompt: &'a str,
         model: Option<&'a str>,
+        effort: Option<&'a str>,
+        access_mode: Option<&'a str>,
     ) -> DispatchFuture<'a, Result<Value, String>> {
         Box::pin(async move {
             let session = self.session_for_workspace(workspace_id).await?;
+            let access_mode = resolve_access_mode(access_mode);
+            let approval_policy = approval_policy_for_access_mode(access_mode);
+            let sandbox_policy = sandbox_policy_for_access_mode(access_mode, &session.entry.path);
             let mut params = json!({
                 "threadId": thread_id,
                 "input": [{ "type": "text", "text": prompt }],
                 "cwd": session.entry.path,
-                "approvalPolicy": "on-request"
+                "approvalPolicy": approval_policy,
+                "sandboxPolicy": sandbox_policy,
             });
             if let Some(model) = model.filter(|value| !value.trim().is_empty()) {
                 params["model"] = json!(model);
             }
+            if let Some(effort) = effort.filter(|value| !value.trim().is_empty()) {
+                params["effort"] = json!(effort);
+            }
             session.send_request("turn/start", params).await
         })
+    }
+}
+
+fn resolve_access_mode(access_mode: Option<&str>) -> &str {
+    match access_mode.map(str::trim).filter(|value| !value.is_empty()) {
+        Some("read-only") => "read-only",
+        Some("full-access") => "full-access",
+        _ => "current",
+    }
+}
+
+fn approval_policy_for_access_mode(access_mode: &str) -> &'static str {
+    if access_mode == "full-access" {
+        "never"
+    } else {
+        "on-request"
+    }
+}
+
+fn sandbox_policy_for_access_mode(access_mode: &str, workspace_path: &str) -> Value {
+    match access_mode {
+        "full-access" => json!({ "type": "dangerFullAccess" }),
+        "read-only" => json!({ "type": "readOnly" }),
+        _ => json!({
+            "type": "workspaceWrite",
+            "writableRoots": [workspace_path],
+            "networkAccess": true
+        }),
     }
 }
 
@@ -263,6 +306,8 @@ impl SupervisorDispatchExecutor {
                 &thread_id,
                 &action.prompt,
                 action.model.as_deref(),
+                action.effort.as_deref(),
+                action.access_mode.as_deref(),
             )
             .await
         {
@@ -328,6 +373,8 @@ struct NormalizedDispatchAction {
     prompt: String,
     dedupe_token: String,
     model: Option<String>,
+    effort: Option<String>,
+    access_mode: Option<String>,
 }
 
 impl NormalizedDispatchAction {
@@ -367,10 +414,9 @@ impl TryFrom<SupervisorDispatchAction> for NormalizedDispatchAction {
             .filter(|token| !token.is_empty())
             .unwrap_or(action_id.as_str())
             .to_string();
-        let model = value.model.and_then(|model| {
-            let trimmed = model.trim();
-            (!trimmed.is_empty()).then(|| trimmed.to_string())
-        });
+        let model = normalize_optional(value.model);
+        let effort = normalize_optional(value.effort);
+        let access_mode = normalize_access_mode(value.access_mode)?;
         Ok(Self {
             action_id,
             workspace_id,
@@ -378,8 +424,29 @@ impl TryFrom<SupervisorDispatchAction> for NormalizedDispatchAction {
             prompt,
             dedupe_token,
             model,
+            effort,
+            access_mode,
         })
     }
+}
+
+fn normalize_optional(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    })
+}
+
+fn normalize_access_mode(value: Option<String>) -> Result<Option<String>, String> {
+    let Some(value) = normalize_optional(value) else {
+        return Ok(None);
+    };
+
+    if matches!(value.as_str(), "read-only" | "current" | "full-access") {
+        return Ok(Some(value));
+    }
+
+    Err("access_mode must be one of `read-only`, `current`, or `full-access`".to_string())
 }
 
 fn failed_dispatch_result(
@@ -527,10 +594,21 @@ mod tests {
             workspace_id: &'a str,
             thread_id: &'a str,
             _prompt: &'a str,
-            _model: Option<&'a str>,
+            model: Option<&'a str>,
+            effort: Option<&'a str>,
+            access_mode: Option<&'a str>,
         ) -> DispatchFuture<'a, Result<Value, String>> {
             Box::pin(async move {
-                self.push_call(format!("turn/start:{workspace_id}:{thread_id}"));
+                let mut call = format!("turn/start:{workspace_id}:{thread_id}");
+                if model.is_some() || effort.is_some() || access_mode.is_some() {
+                    call.push_str(&format!(
+                        ":model={}:effort={}:access={}",
+                        model.unwrap_or("-"),
+                        effort.unwrap_or("-"),
+                        access_mode.unwrap_or("-")
+                    ));
+                }
+                self.push_call(call);
                 Ok(json!({
                     "result": { "turnId": format!("turn-{workspace_id}-{thread_id}") }
                 }))
@@ -552,6 +630,8 @@ mod tests {
             prompt: prompt.to_string(),
             dedupe_key: dedupe_key.map(ToOwned::to_owned),
             model: None,
+            effort: None,
+            access_mode: None,
             route_kind: None,
             route_reason: None,
             route_fallback: None,
@@ -700,6 +780,35 @@ mod tests {
                     "turn/start:ws-1:thread-ws-1",
                     "thread/start:ws-2",
                     "turn/start:ws-2:thread-ws-2",
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn forwards_model_effort_and_access_mode_to_turn_start() {
+        run_async(async {
+            let backend = MockDispatchBackend::default();
+            let mut executor = SupervisorDispatchExecutor::new();
+            let mut dispatch_action = action("action-1", "ws-1", None, "Run task", None);
+            dispatch_action.model = Some("gpt-5-mini".to_string());
+            dispatch_action.effort = Some("high".to_string());
+            dispatch_action.access_mode = Some("full-access".to_string());
+
+            let result = executor
+                .dispatch_batch(&backend, vec![dispatch_action])
+                .await;
+
+            assert_eq!(result.results.len(), 1);
+            assert_eq!(
+                result.results[0].status,
+                SupervisorDispatchStatus::Dispatched
+            );
+            assert_eq!(
+                backend.calls(),
+                vec![
+                    "thread/start:ws-1",
+                    "turn/start:ws-1:thread-ws-1:model=gpt-5-mini:effort=high:access=full-access",
                 ]
             );
         });
@@ -865,6 +974,8 @@ mod tests {
             prompt: " do it ".to_string(),
             dedupe_key: Some(" dispatch ".to_string()),
             model: Some(" gpt-5-mini ".to_string()),
+            effort: Some(" high ".to_string()),
+            access_mode: Some(" full-access ".to_string()),
             route_kind: Some(" workspace_delegate ".to_string()),
             route_reason: Some(" explicit route ".to_string()),
             route_fallback: Some(" fallback ".to_string()),
@@ -877,6 +988,31 @@ mod tests {
         assert_eq!(normalized.prompt, "do it");
         assert_eq!(normalized.dedupe_token, "dispatch");
         assert_eq!(normalized.model.as_deref(), Some("gpt-5-mini"));
+        assert_eq!(normalized.effort.as_deref(), Some("high"));
+        assert_eq!(normalized.access_mode.as_deref(), Some("full-access"));
+    }
+
+    #[test]
+    fn normalization_rejects_unknown_access_mode() {
+        let error = NormalizedDispatchAction::try_from(SupervisorDispatchAction {
+            action_id: "action-1".to_string(),
+            workspace_id: "ws-1".to_string(),
+            thread_id: None,
+            prompt: "run".to_string(),
+            dedupe_key: None,
+            model: None,
+            effort: None,
+            access_mode: Some("admin".to_string()),
+            route_kind: None,
+            route_reason: None,
+            route_fallback: None,
+        })
+        .expect_err("unknown access mode should fail");
+
+        assert_eq!(
+            error,
+            "access_mode must be one of `read-only`, `current`, or `full-access`"
+        );
     }
 
     #[test]
@@ -888,6 +1024,8 @@ mod tests {
             prompt: "Run".to_string(),
             dedupe_key: None,
             model: None,
+            effort: None,
+            access_mode: None,
             route_kind: None,
             route_reason: None,
             route_fallback: None,
@@ -906,6 +1044,8 @@ mod tests {
             prompt: "Run".to_string(),
             dedupe_key: None,
             model: None,
+            effort: None,
+            access_mode: None,
             route_kind: None,
             route_reason: None,
             route_fallback: None,
@@ -924,6 +1064,8 @@ mod tests {
             prompt: "\t".to_string(),
             dedupe_key: None,
             model: None,
+            effort: None,
+            access_mode: None,
             route_kind: None,
             route_reason: None,
             route_fallback: None,

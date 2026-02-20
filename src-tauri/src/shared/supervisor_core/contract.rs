@@ -33,6 +33,10 @@ pub(crate) struct SupervisorDispatchTurnAction {
     #[serde(default)]
     pub(crate) model: Option<String>,
     #[serde(default)]
+    pub(crate) effort: Option<String>,
+    #[serde(default)]
+    pub(crate) access_mode: Option<String>,
+    #[serde(default)]
     pub(crate) route_kind: Option<String>,
     #[serde(default)]
     pub(crate) route_reason: Option<String>,
@@ -133,6 +137,8 @@ fn normalize_dispatch_turn_action(
         thread_id: normalize_optional(action.thread_id),
         dedupe_key: normalize_optional(action.dedupe_key),
         model: normalize_optional(action.model),
+        effort: normalize_optional(action.effort),
+        access_mode: normalize_optional(action.access_mode),
         route_kind: normalize_optional(action.route_kind),
         route_reason: normalize_optional(action.route_reason),
         route_fallback: normalize_optional(action.route_fallback),
@@ -172,6 +178,8 @@ mod tests {
                     "prompt": " fix failing tests ",
                     "dedupe_key": " dispatch-1 ",
                     "model": " gpt-5-mini ",
+                    "effort": " high ",
+                    "access_mode": " full-access ",
                     "route_kind": " workspace_delegate ",
                     "route_reason": " explicit route ",
                     "route_fallback": " fallback used "
@@ -206,6 +214,14 @@ mod tests {
         assert_eq!(
             validated.dispatch_actions[0].model.as_deref(),
             Some("gpt-5-mini")
+        );
+        assert_eq!(
+            validated.dispatch_actions[0].effort.as_deref(),
+            Some("high")
+        );
+        assert_eq!(
+            validated.dispatch_actions[0].access_mode.as_deref(),
+            Some("full-access")
         );
         assert_eq!(
             validated.dispatch_actions[0].route_kind.as_deref(),

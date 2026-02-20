@@ -151,6 +151,10 @@ pub(crate) struct SupervisorJobState {
     #[serde(default)]
     pub(crate) model: Option<String>,
     #[serde(default)]
+    pub(crate) effort: Option<String>,
+    #[serde(default)]
+    pub(crate) access_mode: Option<String>,
+    #[serde(default)]
     pub(crate) waiting_request_id: Option<Value>,
     #[serde(default)]
     pub(crate) waiting_question_ids: Vec<String>,
@@ -538,6 +542,8 @@ mod tests {
                 route_reason: Some("Explicit workspace route".to_string()),
                 route_fallback: None,
                 model: None,
+                effort: None,
+                access_mode: None,
                 waiting_request_id: None,
                 waiting_question_ids: Vec::new(),
                 recent_events: Vec::new(),

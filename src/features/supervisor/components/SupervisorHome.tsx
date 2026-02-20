@@ -254,6 +254,8 @@ export function SupervisorHome({
                       Route: {job.route_kind ?? "workspace_delegate"} · Target:{" "}
                       {job.route_target ?? job.workspace_id}
                       {job.model ? ` · Model ${job.model}` : ""}
+                      {job.effort ? ` · Effort ${job.effort}` : ""}
+                      {job.access_mode ? ` · Access ${job.access_mode}` : ""}
                     </div>
                     {job.route_reason ? (
                       <div className="supervisor-job-meta">Reason: {job.route_reason}</div>

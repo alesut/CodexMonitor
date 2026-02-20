@@ -14,6 +14,8 @@ pub(crate) struct SupervisorChatDispatchRequest {
     pub(crate) thread_id: Option<String>,
     pub(crate) dedupe_key: Option<String>,
     pub(crate) model: Option<String>,
+    pub(crate) effort: Option<String>,
+    pub(crate) access_mode: Option<String>,
     pub(crate) route_kind: Option<String>,
     pub(crate) route_reason: Option<String>,
     pub(crate) route_fallback: Option<String>,
@@ -77,6 +79,8 @@ fn parse_dispatch_command(tokens: &[String]) -> Result<SupervisorChatDispatchReq
     let mut thread_id: Option<String> = None;
     let mut dedupe_key: Option<String> = None;
     let mut model: Option<String> = None;
+    let mut effort: Option<String> = None;
+    let mut access_mode: Option<String> = None;
     let mut index = 0usize;
 
     while index < tokens.len() {
@@ -127,9 +131,23 @@ fn parse_dispatch_command(tokens: &[String]) -> Result<SupervisorChatDispatchReq
                 }
                 model = Some(next_model.to_string());
             }
+            "--effort" => {
+                let next_effort = value.trim();
+                if next_effort.is_empty() {
+                    return Err("`--effort` cannot be empty".to_string());
+                }
+                effort = Some(next_effort.to_string());
+            }
+            "--access-mode" | "--access" => {
+                let next_access_mode = value.trim();
+                if next_access_mode.is_empty() {
+                    return Err("`--access-mode` cannot be empty".to_string());
+                }
+                access_mode = Some(parse_access_mode(next_access_mode)?);
+            }
             unknown => {
                 return Err(format!(
-                    "unknown `/dispatch` flag `{unknown}` (supported: --ws --prompt --thread --dedupe --model)"
+                    "unknown `/dispatch` flag `{unknown}` (supported: --ws --prompt --thread --dedupe --model --effort --access-mode)"
                 ));
             }
         }
@@ -145,10 +163,21 @@ fn parse_dispatch_command(tokens: &[String]) -> Result<SupervisorChatDispatchReq
         thread_id,
         dedupe_key,
         model,
+        effort,
+        access_mode,
         route_kind: None,
         route_reason: None,
         route_fallback: None,
     })
+}
+
+fn parse_access_mode(value: &str) -> Result<String, String> {
+    match value {
+        "read-only" | "current" | "full-access" => Ok(value.to_string()),
+        _ => Err(
+            "`--access-mode` must be one of `read-only`, `current`, or `full-access`".to_string(),
+        ),
+    }
 }
 
 fn parse_ack_command(tokens: &[String]) -> Result<String, String> {
@@ -217,6 +246,8 @@ pub(crate) fn build_dispatch_contract(
                 "thread_id": request.thread_id,
                 "dedupe_key": request.dedupe_key,
                 "model": request.model,
+                "effort": request.effort,
+                "access_mode": request.access_mode,
                 "route_kind": request.route_kind,
                 "route_reason": request.route_reason,
                 "route_fallback": request.route_fallback,
@@ -233,7 +264,7 @@ pub(crate) fn build_dispatch_contract(
 pub(crate) fn format_help_message() -> String {
     [
         "Supported commands:",
-        "- /dispatch --ws ws-1,ws-2 --prompt \"...\" [--thread ...] [--dedupe ...] [--model ...]",
+        "- /dispatch --ws ws-1,ws-2 --prompt \"...\" [--thread ...] [--dedupe ...] [--model ...] [--effort ...] [--access-mode read-only|current|full-access]",
         "- /ack <signal_id>",
         "- /status [workspace_id]",
         "- /feed [needs_input]",
@@ -421,6 +452,12 @@ pub(crate) fn format_dispatch_message(
     if let Some(model) = request.model.as_deref() {
         lines.push(format!("Model: {model}"));
     }
+    if let Some(effort) = request.effort.as_deref() {
+        lines.push(format!("Reasoning effort: {effort}"));
+    }
+    if let Some(access_mode) = request.access_mode.as_deref() {
+        lines.push(format!("Access mode: {access_mode}"));
+    }
 
     for item in &dispatch.results {
         match item.status {
@@ -471,7 +508,7 @@ mod tests {
     #[test]
     fn parses_dispatch_command() {
         let command = parse_supervisor_chat_command(
-            "/dispatch --ws ws-1,ws-2 --prompt \"run tests\" --thread thread-7 --dedupe d-1 --model gpt-5-mini",
+            "/dispatch --ws ws-1,ws-2 --prompt \"run tests\" --thread thread-7 --dedupe d-1 --model gpt-5-mini --effort high --access-mode full-access",
         )
         .expect("parse command");
 
@@ -487,6 +524,8 @@ mod tests {
         assert_eq!(payload.thread_id.as_deref(), Some("thread-7"));
         assert_eq!(payload.dedupe_key.as_deref(), Some("d-1"));
         assert_eq!(payload.model.as_deref(), Some("gpt-5-mini"));
+        assert_eq!(payload.effort.as_deref(), Some("high"));
+        assert_eq!(payload.access_mode.as_deref(), Some("full-access"));
         assert!(payload.route_kind.is_none());
         assert!(payload.route_reason.is_none());
         assert!(payload.route_fallback.is_none());
@@ -527,6 +566,11 @@ mod tests {
         let error = parse_supervisor_chat_command("/dispatch --ws ws-1")
             .expect_err("dispatch without prompt should fail");
         assert!(error.contains("`--prompt` is required"));
+
+        let error =
+            parse_supervisor_chat_command("/dispatch --ws ws-1 --prompt run --access-mode admin")
+                .expect_err("dispatch with invalid access mode should fail");
+        assert!(error.contains("`--access-mode` must be one of"));
 
         let error =
             parse_supervisor_chat_command("/feed unknown").expect_err("invalid feed argument");

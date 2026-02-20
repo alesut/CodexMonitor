@@ -225,6 +225,8 @@ export type SupervisorJobState = {
   route_reason?: string | null;
   route_fallback?: string | null;
   model?: string | null;
+  effort?: string | null;
+  access_mode?: string | null;
   waiting_request_id?: unknown | null;
   waiting_question_ids?: string[];
   recent_events?: SupervisorSubtaskEvent[];
@@ -315,6 +317,8 @@ export type SupervisorDispatchTurnAction = {
   thread_id?: string | null;
   dedupe_key?: string | null;
   model?: string | null;
+  effort?: string | null;
+  access_mode?: string | null;
   route_kind?: string | null;
   route_reason?: string | null;
   route_fallback?: string | null;

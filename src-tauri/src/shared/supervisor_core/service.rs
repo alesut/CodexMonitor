@@ -277,6 +277,8 @@ async fn build_freeform_dispatch_request(
                         Uuid::new_v4().simple()
                     )),
                     model: route.model.clone(),
+                    effort: None,
+                    access_mode: None,
                     route_kind: Some("workspace_delegate".to_string()),
                     route_reason: Some(route.reason.clone()),
                     route_fallback: route.fallback_message.clone(),
@@ -776,6 +778,8 @@ async fn apply_dispatch_outcome_events(
             route_reason: action.and_then(|entry| entry.route_reason.clone()),
             route_fallback: action.and_then(|entry| entry.route_fallback.clone()),
             model: action.and_then(|entry| entry.model.clone()),
+            effort: action.and_then(|entry| entry.effort.clone()),
+            access_mode: action.and_then(|entry| entry.access_mode.clone()),
             waiting_request_id: None,
             waiting_question_ids: Vec::new(),
             recent_events: Vec::new(),
@@ -1283,6 +1287,8 @@ mod tests {
                 prompt: "Run smoke tests".to_string(),
                 dedupe_key: Some("dedupe-1".to_string()),
                 model: Some("gpt-5-mini".to_string()),
+                effort: Some("high".to_string()),
+                access_mode: Some("full-access".to_string()),
                 route_kind: Some("workspace_delegate".to_string()),
                 route_reason: Some("selected by routing score".to_string()),
                 route_fallback: None,
@@ -1343,6 +1349,8 @@ mod tests {
             assert_eq!(job.status, SupervisorJobStatus::Completed);
             assert_eq!(job.route_kind.as_deref(), Some("workspace_delegate"));
             assert_eq!(job.model.as_deref(), Some("gpt-5-mini"));
+            assert_eq!(job.effort.as_deref(), Some("high"));
+            assert_eq!(job.access_mode.as_deref(), Some("full-access"));
 
             let chat = supervisor_chat_history_core(&supervisor_loop).await;
             assert!(
