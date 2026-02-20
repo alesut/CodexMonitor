@@ -541,8 +541,11 @@ impl SupervisorLoop {
                     if added {
                         self.push_subtask_chat_message(
                             &job,
-                            "Subtask completed. Next action: review result and send follow-up instructions if needed."
-                                .to_string(),
+                            format_guided_system_message(
+                                "Child task completed.",
+                                "The latest result is ready to review.",
+                                "Review the output and send follow-up instructions if needed.",
+                            ),
                             "turn_completed",
                             received_at_ms,
                         );
@@ -758,7 +761,11 @@ impl SupervisorLoop {
                     if added {
                         self.push_subtask_chat_message(
                             &job,
-                            format!("Child task asks: {question}\nReply in this chat to continue."),
+                            format_guided_system_message(
+                                format!("Child task asks: {question}"),
+                                "Execution is waiting for your input.",
+                                "Reply in this chat to continue.",
+                            ),
                             "waiting_for_user",
                             received_at_ms,
                         );
@@ -834,7 +841,11 @@ impl SupervisorLoop {
                     if added {
                         self.push_subtask_chat_message(
                             &job,
-                            "Child task requires approval before it can continue.".to_string(),
+                            format_guided_system_message(
+                                "Child task needs approval.",
+                                "Execution is paused until approval is provided.",
+                                "Review and approve the pending request to continue.",
+                            ),
                             "needs_approval",
                             received_at_ms,
                         );
@@ -923,9 +934,17 @@ impl SupervisorLoop {
                     );
                     if added {
                         let chat_message = if will_retry {
-                            format!("Child task reported an error but will retry: {message}")
+                            format_guided_system_message(
+                                format!("Child task hit an error: {message}"),
+                                "The task will retry automatically.",
+                                "Monitor progress and intervene if retries keep failing.",
+                            )
                         } else {
-                            format!("Child task failed: {message}")
+                            format_guided_system_message(
+                                format!("Child task failed: {message}"),
+                                "Execution stopped before completion.",
+                                "Review the error and send follow-up instructions.",
+                            )
                         };
                         self.push_subtask_chat_message(&job, chat_message, "error", received_at_ms);
                     }
@@ -1169,6 +1188,19 @@ fn summarize_text(value: &str, max_chars: usize) -> String {
     }
     let summary = trimmed.chars().take(max_chars).collect::<String>();
     format!("{summary}...")
+}
+
+fn format_guided_system_message(
+    what_happened: impl AsRef<str>,
+    why_it_matters: impl AsRef<str>,
+    next_action: impl AsRef<str>,
+) -> String {
+    format!(
+        "{}\nWhy it matters: {}\nNext action: {}",
+        what_happened.as_ref().trim(),
+        why_it_matters.as_ref().trim(),
+        next_action.as_ref().trim()
+    )
 }
 
 fn request_value_key(workspace_id: &str, request_id: &Value) -> String {
@@ -1530,8 +1562,14 @@ mod tests {
         assert!(
             history
                 .iter()
-                .any(|message| message.text.contains("Subtask completed.")),
+                .any(|message| message.text.contains("Child task completed.")),
             "expected completion summary in supervisor chat"
+        );
+        assert!(
+            history
+                .iter()
+                .any(|message| message.text.contains("Next action: Review the output")),
+            "expected completion message to include next action"
         );
         assert!(
             history
@@ -1580,7 +1618,13 @@ mod tests {
         assert!(
             history
                 .iter()
-                .any(|message| message.text.contains("Reply in this chat to continue.")),
+                .any(|message| message.text.contains("Why it matters: Execution is waiting for your input.")),
+            "expected child clarification message to explain impact"
+        );
+        assert!(
+            history
+                .iter()
+                .any(|message| message.text.contains("Next action: Reply in this chat to continue.")),
             "expected child clarification instructions without subtask identifiers"
         );
         assert!(
@@ -1588,6 +1632,41 @@ mod tests {
                 .iter()
                 .all(|message| !message.text.contains("[subtask:")),
             "expected user-facing chat messages without technical prefixes"
+        );
+    }
+
+    #[test]
+    fn child_approval_is_bridged_with_next_action_message() {
+        let mut loop_state = SupervisorLoop::new(SupervisorLoopConfig::default());
+        loop_state.upsert_job(tracked_running_job("job-approval", "ws-4", "thread-4"));
+
+        loop_state.apply_app_server_event(
+            "ws-4",
+            &json!({
+                "id": 9,
+                "method": "workspace/requestApproval",
+                "params": {
+                    "threadId": "thread-4",
+                    "turnId": "turn-4",
+                    "itemId": "item-4",
+                    "mode": "full"
+                }
+            }),
+            40,
+        );
+
+        let history = loop_state.chat_history();
+        assert!(
+            history
+                .iter()
+                .any(|message| message.text.contains("Child task needs approval.")),
+            "expected approval message in supervisor chat"
+        );
+        assert!(
+            history.iter().any(|message| message
+                .text
+                .contains("Next action: Review and approve the pending request to continue.")),
+            "expected approval message to include next action"
         );
     }
 
@@ -1621,6 +1700,12 @@ mod tests {
                 .text
                 .contains("Child task failed: Build failed on step test")),
             "expected bridged child failure in supervisor chat"
+        );
+        assert!(
+            history
+                .iter()
+                .any(|message| message.text.contains("Next action: Review the error and send follow-up instructions.")),
+            "expected failure message to include next action"
         );
         assert!(
             history
