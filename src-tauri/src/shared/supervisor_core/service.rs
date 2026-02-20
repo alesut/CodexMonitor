@@ -142,6 +142,7 @@ async fn execute_supervisor_chat_command(
                 supervisor_loop,
                 dispatch_executor,
                 sessions,
+                workspaces,
                 command,
                 received_at_ms,
             )
@@ -210,6 +211,7 @@ async fn execute_freeform_supervisor_chat(
                 supervisor_loop,
                 dispatch_executor,
                 sessions,
+                workspaces,
                 SupervisorChatCommand::Dispatch(request),
                 received_at_ms,
             )
@@ -619,13 +621,20 @@ async fn execute_parsed_supervisor_chat_command(
     supervisor_loop: &Arc<Mutex<SupervisorLoop>>,
     dispatch_executor: &Arc<Mutex<SupervisorDispatchExecutor>>,
     sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
     command: SupervisorChatCommand,
     received_at_ms: i64,
 ) -> Result<String, String> {
     match command {
         SupervisorChatCommand::Help => Ok(format_help_message()),
         SupervisorChatCommand::Status { workspace_id } => {
-            let snapshot = supervisor_snapshot_core(supervisor_loop).await;
+            let mut snapshot = supervisor_snapshot_core(supervisor_loop).await;
+            let workspaces = workspaces.lock().await;
+            for entry in workspaces.values() {
+                if let Some(workspace) = snapshot.workspaces.get_mut(&entry.id) {
+                    workspace.name = entry.name.clone();
+                }
+            }
             format_status_message(&snapshot, workspace_id.as_deref())
         }
         SupervisorChatCommand::Feed { needs_input_only } => {
@@ -1232,6 +1241,61 @@ mod tests {
             assert_eq!(system_message.role, SupervisorChatMessageRole::System);
             assert!(
                 system_message.text.contains("Global supervisor status:"),
+                "unexpected response text: {}",
+                system_message.text
+            );
+        });
+    }
+
+    #[test]
+    fn supervisor_chat_send_core_status_uses_workspace_names_from_registry() {
+        run_async(async {
+            let mut state = SupervisorState::default();
+            state.workspaces.insert(
+                "ws-1".to_string(),
+                crate::shared::supervisor_core::SupervisorWorkspaceState {
+                    id: "ws-1".to_string(),
+                    name: String::new(),
+                    ..Default::default()
+                },
+            );
+            let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::from_state(
+                SupervisorLoopConfig::default(),
+                state,
+            )));
+            let dispatch_executor = Arc::new(Mutex::new(SupervisorDispatchExecutor::new()));
+            let sessions = Mutex::new(HashMap::new());
+            let workspaces = Mutex::new(HashMap::from([(
+                "ws-1".to_string(),
+                WorkspaceEntry {
+                    id: "ws-1".to_string(),
+                    name: "CodexMonitor".to_string(),
+                    path: "/tmp/codex-monitor".to_string(),
+                    codex_bin: None,
+                    kind: WorkspaceKind::Main,
+                    parent_id: None,
+                    worktree: None,
+                    settings: WorkspaceSettings::default(),
+                },
+            )]));
+            let app_settings = Mutex::new(AppSettings::default());
+
+            let response = supervisor_chat_send_core(
+                &supervisor_loop,
+                &dispatch_executor,
+                &sessions,
+                &workspaces,
+                &app_settings,
+                "/status",
+                300,
+            )
+            .await
+            .expect("chat send");
+
+            let system_message = response.messages.last().expect("system message");
+            assert_eq!(system_message.role, SupervisorChatMessageRole::System);
+            assert!(
+                system_message.text.contains("`CodexMonitor` (`ws-1`)"),
                 "unexpected response text: {}",
                 system_message.text
             );

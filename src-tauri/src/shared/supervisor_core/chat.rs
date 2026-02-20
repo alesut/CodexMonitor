@@ -312,8 +312,9 @@ pub(crate) fn format_status_message(
                     && signal.workspace_id.as_deref() == Some(workspace_id)
             })
             .count();
+        let workspace_label = workspace_summary_label(workspace);
         return Ok([
-            format!("Status for workspace `{workspace_id}`:"),
+            format!("Status for workspace {workspace_label}:"),
             format!(
                 "- connected: {}",
                 if workspace.connected { "yes" } else { "no" }
@@ -362,7 +363,7 @@ pub(crate) fn format_status_message(
         for workspace in state.workspaces.values() {
             lines.push(format!(
                 "  - {} ({}): {}",
-                workspace.id,
+                workspace_summary_label(workspace),
                 health_label(&workspace.health),
                 workspace.current_task.as_deref().unwrap_or("idle")
             ));
@@ -499,6 +500,15 @@ fn health_label(health: &super::SupervisorHealth) -> &'static str {
     }
 }
 
+fn workspace_summary_label(workspace: &super::SupervisorWorkspaceState) -> String {
+    let name = workspace.name.trim();
+    if name.is_empty() || name == workspace.id {
+        format!("`{}`", workspace.id)
+    } else {
+        format!("`{}` (`{}`)", name, workspace.id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::SupervisorHealth;
@@ -595,5 +605,6 @@ mod tests {
         let message = format_status_message(&state, None).expect("status");
         assert!(message.contains("Global supervisor status:"));
         assert!(message.contains("ws-1"));
+        assert!(message.contains("Workspace 1"));
     }
 }
