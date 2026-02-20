@@ -1,9 +1,9 @@
 pub(crate) mod account;
 pub(crate) mod agents_config_core;
-pub(crate) mod config_toml_core;
 pub(crate) mod codex_aux_core;
-pub(crate) mod codex_update_core;
 pub(crate) mod codex_core;
+pub(crate) mod codex_update_core;
+pub(crate) mod config_toml_core;
 pub(crate) mod files_core;
 pub(crate) mod git_core;
 pub(crate) mod git_ui_core;

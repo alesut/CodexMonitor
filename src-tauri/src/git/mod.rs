@@ -98,8 +98,13 @@ pub(crate) async fn init_git_repo(
         "init_git_repo",
         json!({ "workspaceId": &workspace_id, "branch": &branch, "force": force })
     );
-    git_ui_core::init_git_repo_core(&state.workspaces, workspace_id, branch, force.unwrap_or(false))
-        .await
+    git_ui_core::init_git_repo_core(
+        &state.workspaces,
+        workspace_id,
+        branch,
+        force.unwrap_or(false),
+    )
+    .await
 }
 
 #[tauri::command]
