@@ -22,6 +22,7 @@ export function useSupervisorOperations() {
   const [needsInputOnly, setNeedsInputOnly] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshedAtMs, setLastRefreshedAtMs] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ackError, setAckError] = useState<string | null>(null);
   const [ackingSignalId, setAckingSignalId] = useState<string | null>(null);
@@ -53,6 +54,7 @@ export function useSupervisorOperations() {
         setSnapshot(nextSnapshot);
         setFeedItems(nextFeed.items);
         setFeedTotal(nextFeed.total);
+        setLastRefreshedAtMs(Date.now());
       } catch (error) {
         if (!isMountedRef.current) {
           return;
@@ -180,6 +182,7 @@ export function useSupervisorOperations() {
     setNeedsInputOnly,
     isLoading,
     isRefreshing,
+    lastRefreshedAtMs,
     loadError,
     ackError,
     ackingSignalId,

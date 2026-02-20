@@ -1,6 +1,5 @@
 import { useCallback, useRef, type FormEvent, type KeyboardEvent } from "react";
 import Mic from "lucide-react/dist/esm/icons/mic";
-import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import SendHorizontal from "lucide-react/dist/esm/icons/send-horizontal";
 import { DictationWaveform } from "@/features/dictation/components/DictationWaveform";
 import type { DictationSessionState, DictationTranscript } from "@/types";
@@ -43,7 +42,6 @@ export function SupervisorChat({
     loadError,
     sendError,
     sendCommand,
-    refreshHistory,
   } = useSupervisorChat({
     textareaRef,
     dictationTranscript,
@@ -96,18 +94,6 @@ export function SupervisorChat({
           <h2>Global chat</h2>
           <p>Chat with Supervisor or run structured commands from one control point.</p>
         </div>
-        <button
-          type="button"
-          className="supervisor-chat-refresh"
-          onClick={() => {
-            void refreshHistory("initial");
-          }}
-          disabled={isLoading}
-          aria-label="Refresh supervisor chat history"
-        >
-          <RefreshCw className={isLoading ? "spinning" : ""} size={14} aria-hidden />
-          Refresh
-        </button>
       </div>
 
       <div className="supervisor-chat-history" role="log" aria-live="polite">

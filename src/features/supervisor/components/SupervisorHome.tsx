@@ -153,6 +153,7 @@ export function SupervisorHome({
     setNeedsInputOnly,
     isLoading,
     isRefreshing,
+    lastRefreshedAtMs,
     loadError,
     ackError,
     ackingSignalId,
@@ -200,6 +201,56 @@ export function SupervisorHome({
     },
     [workspacesById],
   );
+  const controlCounters = useMemo(() => {
+    type ControlCounter = {
+      key: string;
+      label: string;
+      value: number;
+      isAttention?: boolean;
+    };
+    const primary: ControlCounter[] = [
+      { key: "workspaces", label: "Workspaces", value: workspaceList.length },
+      { key: "threads", label: "Threads", value: threadList.length },
+      { key: "jobs", label: "Jobs", value: jobList.length },
+    ];
+    const secondary: ControlCounter[] = [
+      {
+        key: "signals",
+        label: "Pending signals",
+        value: pendingSignals.length,
+        isAttention: true,
+      },
+      {
+        key: "needs-input",
+        label: "Needs input",
+        value: activityNeedsInputCount,
+        isAttention: true,
+      },
+      {
+        key: "approvals",
+        label: "Approvals",
+        value: pendingApprovalsCount,
+        isAttention: true,
+      },
+      {
+        key: "questions",
+        label: "Open questions",
+        value: openQuestionsCount,
+        isAttention: true,
+      },
+    ].filter((counter) => counter.value > 0);
+    return [...primary, ...secondary];
+  }, [
+    activityNeedsInputCount,
+    jobList.length,
+    openQuestionsCount,
+    pendingApprovalsCount,
+    pendingSignals.length,
+    threadList.length,
+    workspaceList.length,
+  ]);
+  const lastUpdatedLabel =
+    lastRefreshedAtMs === null ? "syncing..." : formatSupervisorTime(lastRefreshedAtMs);
 
   return (
     <div className="supervisor-home">
@@ -210,48 +261,32 @@ export function SupervisorHome({
             Live operations state across workspaces, threads, and dispatch jobs.
           </p>
         </div>
-        <button
-          type="button"
-          className="supervisor-home-refresh"
-          onClick={() => {
-            void refresh("manual");
-          }}
-          disabled={isLoading || isRefreshing}
-          aria-label="Refresh supervisor snapshot"
-        >
-          <RefreshCw className={isRefreshing ? "spinning" : ""} size={14} aria-hidden />
-          Refresh
-        </button>
-      </div>
-
-      <div className="supervisor-home-kpis">
-        <div className="supervisor-kpi">
-          <span className="supervisor-kpi-label">Workspaces</span>
-          <strong>{workspaceList.length}</strong>
-        </div>
-        <div className="supervisor-kpi">
-          <span className="supervisor-kpi-label">Threads</span>
-          <strong>{threadList.length}</strong>
-        </div>
-        <div className="supervisor-kpi">
-          <span className="supervisor-kpi-label">Dispatch jobs</span>
-          <strong>{jobList.length}</strong>
-        </div>
-        <div className="supervisor-kpi">
-          <span className="supervisor-kpi-label">Pending signals</span>
-          <strong>{pendingSignals.length}</strong>
-        </div>
-        <div className="supervisor-kpi">
-          <span className="supervisor-kpi-label">Needs input</span>
-          <strong>{activityNeedsInputCount}</strong>
-        </div>
-        <div className="supervisor-kpi">
-          <span className="supervisor-kpi-label">Approvals</span>
-          <strong>{pendingApprovalsCount}</strong>
-        </div>
-        <div className="supervisor-kpi">
-          <span className="supervisor-kpi-label">Open questions</span>
-          <strong>{openQuestionsCount}</strong>
+        <div className="supervisor-home-control-bar">
+          <div className="supervisor-home-control-meta">
+            <span className="supervisor-home-last-updated">Last updated {lastUpdatedLabel}</span>
+            <button
+              type="button"
+              className="supervisor-home-refresh"
+              onClick={() => {
+                void refresh("manual");
+              }}
+              disabled={isLoading || isRefreshing}
+              aria-label="Refresh supervisor snapshot"
+            >
+              <RefreshCw className={isRefreshing ? "spinning" : ""} size={14} aria-hidden />
+              Refresh
+            </button>
+          </div>
+          <div className="supervisor-home-control-counters">
+            {controlCounters.map((counter) => (
+              <span
+                key={counter.key}
+                className={`supervisor-home-counter-pill${counter.isAttention ? " is-attention" : ""}`}
+              >
+                <strong>{counter.value}</strong> {counter.label}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
