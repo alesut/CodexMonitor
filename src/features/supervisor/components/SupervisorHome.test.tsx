@@ -134,6 +134,10 @@ describe("SupervisorHome", () => {
     expect((await screen.findAllByText("Pending signals")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Deployment run completed")).toBeTruthy();
     expect(screen.getByText("Workspaces")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Refresh supervisor snapshot" })).toBeTruthy();
+    expect(screen.getByText("Dispatch jobs")).toBeTruthy();
+    expect(screen.getByText("Live activity feed")).toBeTruthy();
+    expect(screen.getByText("Recent signals")).toBeTruthy();
     expect(vi.mocked(getSupervisorSnapshot)).toHaveBeenCalled();
     expect(vi.mocked(getSupervisorFeed)).toHaveBeenCalledWith({
       limit: 80,

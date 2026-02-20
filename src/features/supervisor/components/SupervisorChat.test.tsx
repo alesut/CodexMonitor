@@ -76,6 +76,9 @@ describe("SupervisorChat", () => {
   it("loads history and sends command", async () => {
     render(<SupervisorChat {...baseProps} />);
     expect(await screen.findByText("Supported commands")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Refresh supervisor chat history" }),
+    ).toBeNull();
 
     const input = screen.getByRole("textbox");
     fireEvent.change(input, { target: { value: "/status" } });
