@@ -737,50 +737,30 @@ pub(crate) fn format_dispatch_message(
     let failed = total.saturating_sub(dispatched);
     let mut lines = vec![
         format!(
-            "Dispatch completed for {} workspace(s): {} dispatched, {} failed.",
+            "Sent task to {} workspace(s): {} succeeded, {} failed.",
             request.workspace_ids.len(),
             dispatched,
             failed
         ),
         format!(
-            "Prompt: {}",
+            "Task: {}",
             request.prompt.trim().chars().take(140).collect::<String>()
         ),
     ];
-    if let Some(route_kind) = request.route_kind.as_deref() {
-        lines.push(format!("Route kind: {route_kind}"));
-    }
-    if let Some(route_reason) = request.route_reason.as_deref() {
-        lines.push(format!("Route reason: {route_reason}"));
-    }
-    if let Some(route_fallback) = request.route_fallback.as_deref() {
-        lines.push(format!("Route fallback: {route_fallback}"));
-    }
-    if let Some(model) = request.model.as_deref() {
-        lines.push(format!("Model: {model}"));
-    }
-    if let Some(effort) = request.effort.as_deref() {
-        lines.push(format!("Reasoning effort: {effort}"));
-    }
-    if let Some(access_mode) = request.access_mode.as_deref() {
-        lines.push(format!("Access mode: {access_mode}"));
-    }
 
     for item in &dispatch.results {
         match item.status {
             SupervisorDispatchStatus::Dispatched => lines.push(format!(
-                "- {}: dispatched (thread: {}, turn: {}){}",
+                "- {}: started{}",
                 item.workspace_id,
-                item.thread_id.as_deref().unwrap_or("n/a"),
-                item.turn_id.as_deref().unwrap_or("n/a"),
                 if item.idempotent_replay {
-                    " [idempotent_replay]"
+                    " (reused existing run)"
                 } else {
                     ""
                 }
             )),
             SupervisorDispatchStatus::Failed => lines.push(format!(
-                "- {}: failed ({})",
+                "- {}: failed to start ({})",
                 item.workspace_id,
                 item.error.as_deref().unwrap_or("unknown error")
             )),
@@ -817,6 +797,7 @@ fn workspace_summary_label(workspace: &super::SupervisorWorkspaceState) -> Strin
 
 #[cfg(test)]
 mod tests {
+    use super::super::dispatch::SupervisorDispatchActionResult;
     use super::super::SupervisorHealth;
     use super::super::SupervisorOpenQuestion;
     use super::super::SupervisorPendingApproval;
@@ -921,6 +902,56 @@ mod tests {
         let error =
             parse_supervisor_chat_command("/feed unknown").expect_err("invalid feed argument");
         assert!(error.contains("usage: /feed [needs_input]"));
+    }
+
+    #[test]
+    fn formats_dispatch_message_with_user_facing_copy() {
+        let request = SupervisorChatDispatchRequest {
+            workspace_ids: vec!["ws-1".to_string(), "ws-2".to_string()],
+            prompt: "Run smoke tests and share a concise summary.".to_string(),
+            thread_id: Some("thread-1".to_string()),
+            dedupe_key: Some("dispatch-1".to_string()),
+            model: Some("gpt-5-mini".to_string()),
+            effort: Some("high".to_string()),
+            access_mode: Some("full-access".to_string()),
+            route_kind: Some("workspace_metadata_match".to_string()),
+            route_reason: Some("prompt matched workspace metadata".to_string()),
+            route_fallback: Some("manual_dispatch".to_string()),
+        };
+        let dispatch = SupervisorDispatchBatchResult {
+            results: vec![
+                SupervisorDispatchActionResult {
+                    action_id: "action-1".to_string(),
+                    workspace_id: "ws-1".to_string(),
+                    dedupe_key: "ws-1:dispatch-1".to_string(),
+                    status: SupervisorDispatchStatus::Dispatched,
+                    thread_id: Some("thread-1".to_string()),
+                    turn_id: Some("turn-1".to_string()),
+                    error: None,
+                    idempotent_replay: true,
+                },
+                SupervisorDispatchActionResult {
+                    action_id: "action-2".to_string(),
+                    workspace_id: "ws-2".to_string(),
+                    dedupe_key: "ws-2:dispatch-1".to_string(),
+                    status: SupervisorDispatchStatus::Failed,
+                    thread_id: None,
+                    turn_id: None,
+                    error: Some("workspace is not connected".to_string()),
+                    idempotent_replay: false,
+                },
+            ],
+        };
+
+        let message = format_dispatch_message(&request, &dispatch);
+        assert!(message.contains("Sent task to 2 workspace(s): 1 succeeded, 1 failed."));
+        assert!(message.contains("Task: Run smoke tests and share a concise summary."));
+        assert!(message.contains("- ws-1: started (reused existing run)"));
+        assert!(message.contains("- ws-2: failed to start (workspace is not connected)"));
+        assert!(!message.contains("Dispatch completed"));
+        assert!(!message.contains("Route kind"));
+        assert!(!message.contains("Route reason"));
+        assert!(!message.contains("Route fallback"));
     }
 
     #[test]
