@@ -6,6 +6,7 @@ use super::dispatch::{SupervisorDispatchBatchResult, SupervisorDispatchStatus};
 use super::{SupervisorActivityEntry, SupervisorChatMessage, SupervisorState};
 
 pub(crate) const SUPERVISOR_CHAT_FEED_LIMIT: usize = 20;
+const STATUS_THREADS_PER_WORKSPACE_LIMIT: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SupervisorChatDispatchRequest {
@@ -24,9 +25,16 @@ pub(crate) struct SupervisorChatDispatchRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SupervisorChatCommand {
     Dispatch(SupervisorChatDispatchRequest),
-    Ack { signal_id: String },
-    Status { workspace_id: Option<String> },
-    Feed { needs_input_only: bool },
+    Ack {
+        signal_id: String,
+    },
+    Status {
+        workspace_id: Option<String>,
+        thread_id: Option<String>,
+    },
+    Feed {
+        needs_input_only: bool,
+    },
     Help,
 }
 
@@ -59,8 +67,14 @@ pub(crate) fn parse_supervisor_chat_command(input: &str) -> Result<SupervisorCha
         "/dispatch" => parse_dispatch_command(&tokens[1..]).map(SupervisorChatCommand::Dispatch),
         "/ack" => parse_ack_command(&tokens[1..])
             .map(|signal_id| SupervisorChatCommand::Ack { signal_id }),
-        "/status" => parse_status_command(&tokens[1..])
-            .map(|workspace_id| SupervisorChatCommand::Status { workspace_id }),
+        "/status" | "/статус" => {
+            parse_status_command(&tokens[1..]).map(|(workspace_id, thread_id)| {
+                SupervisorChatCommand::Status {
+                    workspace_id,
+                    thread_id,
+                }
+            })
+        }
         "/feed" => parse_feed_command(&tokens[1..])
             .map(|needs_input_only| SupervisorChatCommand::Feed { needs_input_only }),
         "/help" => {
@@ -194,18 +208,50 @@ fn parse_ack_command(tokens: &[String]) -> Result<String, String> {
     Ok(signal_id.to_string())
 }
 
-fn parse_status_command(tokens: &[String]) -> Result<Option<String>, String> {
+fn parse_status_command(tokens: &[String]) -> Result<(Option<String>, Option<String>), String> {
+    let usage =
+        "usage: /status [workspace_id] [thread_id] | /status [workspace_id] --thread <thread_id>";
     if tokens.is_empty() {
-        return Ok(None);
+        return Ok((None, None));
     }
-    if tokens.len() > 1 {
-        return Err("usage: /status [workspace_id]".to_string());
+
+    if tokens.len() == 1 {
+        let workspace_id = tokens[0].trim();
+        if workspace_id.is_empty() {
+            return Ok((None, None));
+        }
+        if workspace_id == "--thread" {
+            return Err(usage.to_string());
+        }
+        return Ok((Some(workspace_id.to_string()), None));
     }
-    let workspace_id = tokens[0].trim();
-    if workspace_id.is_empty() {
-        return Ok(None);
+
+    if tokens.len() == 2 {
+        let first = tokens[0].trim();
+        let second = tokens[1].trim();
+        if first == "--thread" {
+            if second.is_empty() {
+                return Err(usage.to_string());
+            }
+            return Ok((None, Some(second.to_string())));
+        }
+        if first.is_empty() || second.is_empty() || second == "--thread" {
+            return Err(usage.to_string());
+        }
+        return Ok((Some(first.to_string()), Some(second.to_string())));
     }
-    Ok(Some(workspace_id.to_string()))
+
+    if tokens.len() == 3 {
+        let workspace_id = tokens[0].trim();
+        let flag = tokens[1].trim();
+        let thread_id = tokens[2].trim();
+        if workspace_id.is_empty() || thread_id.is_empty() || flag != "--thread" {
+            return Err(usage.to_string());
+        }
+        return Ok((Some(workspace_id.to_string()), Some(thread_id.to_string())));
+    }
+
+    Err(usage.to_string())
 }
 
 fn parse_feed_command(tokens: &[String]) -> Result<bool, String> {
@@ -266,7 +312,9 @@ pub(crate) fn format_help_message() -> String {
         "Supported commands:",
         "- /dispatch --ws ws-1,ws-2 --prompt \"...\" [--thread ...] [--dedupe ...] [--model ...] [--effort ...] [--access-mode read-only|current|full-access]",
         "- /ack <signal_id>",
-        "- /status [workspace_id]",
+        "- /status [workspace_id] [thread_id]",
+        "- /status [workspace_id] --thread <thread_id>",
+        "- /статус [workspace_id] [thread_id] (alias)",
         "- /feed [needs_input]",
         "- /help",
         "",
@@ -280,25 +328,46 @@ pub(crate) fn format_help_message() -> String {
 pub(crate) fn format_status_message(
     state: &SupervisorState,
     workspace_id: Option<&str>,
+    thread_id: Option<&str>,
 ) -> Result<String, String> {
+    let workspace_id = workspace_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let thread_id = thread_id.map(str::trim).filter(|value| !value.is_empty());
+
+    if let Some(thread_id) = thread_id {
+        let thread_summary = find_thread_summary(state, workspace_id, thread_id)?;
+        let thread_key = super::thread_map_key(&thread_summary.workspace_id, &thread_summary.id);
+        let Some(thread_state) = state.threads.get(&thread_key) else {
+            return Err(format!(
+                "thread `{}` not found in workspace `{}`",
+                thread_summary.id, thread_summary.workspace_id
+            ));
+        };
+        let workspace_label = state
+            .workspaces
+            .get(&thread_summary.workspace_id)
+            .map(workspace_summary_label)
+            .unwrap_or_else(|| format!("`{}`", thread_summary.workspace_id));
+        return Ok(format_thread_status_message(
+            &thread_summary,
+            thread_state,
+            &workspace_label,
+        ));
+    }
+
     let pending_signals = state
         .signals
         .iter()
         .filter(|signal| signal.acknowledged_at_ms.is_none())
         .count();
 
-    if let Some(workspace_id) = workspace_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
+    if let Some(workspace_id) = workspace_id {
         let Some(workspace) = state.workspaces.get(workspace_id) else {
             return Err(format!("workspace `{workspace_id}` not found"));
         };
-        let thread_count = state
-            .threads
-            .values()
-            .filter(|thread| thread.workspace_id == workspace_id)
-            .count();
+        let thread_summaries = collect_workspace_thread_summaries(state, workspace_id);
+        let thread_count = thread_summaries.len();
         let job_count = state
             .jobs
             .values()
@@ -313,7 +382,7 @@ pub(crate) fn format_status_message(
             })
             .count();
         let workspace_label = workspace_summary_label(workspace);
-        return Ok([
+        let mut lines = vec![
             format!("Status for workspace {workspace_label}:"),
             format!(
                 "- connected: {}",
@@ -340,10 +409,18 @@ pub(crate) fn format_status_message(
             ),
             format!("- blockers: {}", blockers_label(&workspace.blockers)),
             format!("- threads: {thread_count}"),
+        ];
+        append_thread_details_lines(
+            &mut lines,
+            &thread_summaries,
+            STATUS_THREADS_PER_WORKSPACE_LIMIT,
+            "",
+        );
+        lines.extend([
             format!("- jobs: {job_count}"),
             format!("- pending_signals: {workspace_pending_signals}"),
-        ]
-        .join("\n"));
+        ]);
+        return Ok(lines.join("\n"));
     }
 
     let mut lines = vec![
@@ -361,16 +438,245 @@ pub(crate) fn format_status_message(
     } else {
         lines.push("- workspaces_detail:".to_string());
         for workspace in state.workspaces.values() {
+            let thread_summaries = collect_workspace_thread_summaries(state, &workspace.id);
             lines.push(format!(
                 "  - {} ({}): {}",
                 workspace_summary_label(workspace),
                 health_label(&workspace.health),
                 workspace.current_task.as_deref().unwrap_or("idle")
             ));
+            lines.push(format!("    - threads: {} active", thread_summaries.len()));
+            append_thread_details_lines(
+                &mut lines,
+                &thread_summaries,
+                STATUS_THREADS_PER_WORKSPACE_LIMIT,
+                "    ",
+            );
         }
     }
 
     Ok(lines.join("\n"))
+}
+
+#[derive(Debug, Clone)]
+struct StatusThreadSummary {
+    id: String,
+    workspace_id: String,
+    name: Option<String>,
+    status: super::SupervisorThreadStatus,
+    last_activity_at_ms: Option<i64>,
+    message_count: usize,
+    unread_count: usize,
+}
+
+fn collect_workspace_thread_summaries(
+    state: &SupervisorState,
+    workspace_id: &str,
+) -> Vec<StatusThreadSummary> {
+    let mut summaries = state
+        .threads
+        .values()
+        .filter(|thread| thread.workspace_id == workspace_id)
+        .map(|thread| {
+            let message_count = state
+                .activity_feed
+                .iter()
+                .filter(|entry| {
+                    entry.workspace_id.as_deref() == Some(workspace_id)
+                        && entry.thread_id.as_deref() == Some(thread.id.as_str())
+                })
+                .count();
+            let unread_signals = state
+                .signals
+                .iter()
+                .filter(|signal| {
+                    signal.acknowledged_at_ms.is_none()
+                        && signal.workspace_id.as_deref() == Some(workspace_id)
+                        && signal.thread_id.as_deref() == Some(thread.id.as_str())
+                })
+                .count();
+            let unread_questions = state
+                .open_questions
+                .values()
+                .filter(|question| {
+                    question.resolved_at_ms.is_none()
+                        && question.workspace_id == workspace_id
+                        && question.thread_id == thread.id
+                })
+                .count();
+            let unread_approvals = state
+                .pending_approvals
+                .values()
+                .filter(|approval| {
+                    approval.resolved_at_ms.is_none()
+                        && approval.workspace_id == workspace_id
+                        && approval.thread_id.as_deref() == Some(thread.id.as_str())
+                })
+                .count();
+
+            StatusThreadSummary {
+                id: thread.id.clone(),
+                workspace_id: workspace_id.to_string(),
+                name: thread
+                    .name
+                    .as_ref()
+                    .map(|value| value.trim())
+                    .filter(|value| !value.is_empty())
+                    .map(ToString::to_string),
+                status: thread.status.clone(),
+                last_activity_at_ms: thread.last_activity_at_ms,
+                message_count,
+                unread_count: unread_signals + unread_questions + unread_approvals,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    summaries.sort_by(|left, right| {
+        right
+            .last_activity_at_ms
+            .unwrap_or_default()
+            .cmp(&left.last_activity_at_ms.unwrap_or_default())
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    summaries
+}
+
+fn find_thread_summary(
+    state: &SupervisorState,
+    workspace_id: Option<&str>,
+    thread_id: &str,
+) -> Result<StatusThreadSummary, String> {
+    if let Some(workspace_id) = workspace_id {
+        return collect_workspace_thread_summaries(state, workspace_id)
+            .into_iter()
+            .find(|summary| summary.id == thread_id)
+            .ok_or_else(|| {
+                format!("thread `{thread_id}` not found in workspace `{workspace_id}`")
+            });
+    }
+
+    let matching_workspace_ids = state
+        .threads
+        .values()
+        .filter(|thread| thread.id == thread_id)
+        .map(|thread| thread.workspace_id.clone())
+        .collect::<Vec<_>>();
+    if matching_workspace_ids.is_empty() {
+        return Err(format!("thread `{thread_id}` not found"));
+    }
+    let mut unique_workspace_ids = matching_workspace_ids
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>();
+    if unique_workspace_ids.len() > 1 {
+        return Err(format!(
+            "thread `{thread_id}` exists in multiple workspaces; use `/status <workspace_id> --thread {thread_id}`"
+        ));
+    }
+    let workspace_id = unique_workspace_ids
+        .pop_first()
+        .ok_or_else(|| format!("thread `{thread_id}` not found"))?;
+    collect_workspace_thread_summaries(state, &workspace_id)
+        .into_iter()
+        .find(|summary| summary.id == thread_id)
+        .ok_or_else(|| format!("thread `{thread_id}` not found in workspace `{workspace_id}`"))
+}
+
+fn append_thread_details_lines(
+    lines: &mut Vec<String>,
+    thread_summaries: &[StatusThreadSummary],
+    limit: usize,
+    indent: &str,
+) {
+    if thread_summaries.is_empty() {
+        lines.push(format!("{indent}- threads_detail: none"));
+        return;
+    }
+
+    let show_count = thread_summaries.len().min(limit);
+    lines.push(format!(
+        "{indent}- threads_detail (showing {show_count} of {}):",
+        thread_summaries.len()
+    ));
+    for summary in thread_summaries.iter().take(limit) {
+        lines.push(format!(
+            "{indent}  - {} | status: {} | last_activity_at_ms: {} | messages: {} | unread: {}",
+            thread_summary_label(summary),
+            thread_status_label(&summary.status),
+            summary
+                .last_activity_at_ms
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            summary.message_count,
+            summary.unread_count
+        ));
+    }
+    let hidden = thread_summaries.len().saturating_sub(show_count);
+    if hidden > 0 {
+        lines.push(format!(
+            "{indent}  - ... and {hidden} more active thread(s)"
+        ));
+    }
+}
+
+fn thread_summary_label(thread: &StatusThreadSummary) -> String {
+    let name = thread.name.as_deref().unwrap_or_default().trim();
+    if name.is_empty() || name == thread.id {
+        format!("`{}`", thread.id)
+    } else {
+        format!("`{}` (`{}`)", name, thread.id)
+    }
+}
+
+fn thread_status_label(status: &super::SupervisorThreadStatus) -> &'static str {
+    match status {
+        super::SupervisorThreadStatus::Idle => "idle",
+        super::SupervisorThreadStatus::Running => "running",
+        super::SupervisorThreadStatus::WaitingInput => "waiting_input",
+        super::SupervisorThreadStatus::Failed => "failed",
+        super::SupervisorThreadStatus::Completed => "completed",
+        super::SupervisorThreadStatus::Stalled => "stalled",
+    }
+}
+
+fn format_thread_status_message(
+    summary: &StatusThreadSummary,
+    thread: &super::SupervisorThreadState,
+    workspace_label: &str,
+) -> String {
+    [
+        format!(
+            "Status for thread {} in workspace {}:",
+            thread_summary_label(summary),
+            workspace_label
+        ),
+        format!("- status: {}", thread_status_label(&summary.status)),
+        format!(
+            "- current_task: {}",
+            thread.current_task.as_deref().unwrap_or("none")
+        ),
+        format!(
+            "- next_step: {}",
+            thread
+                .next_expected_step
+                .as_deref()
+                .unwrap_or("pending update")
+        ),
+        format!(
+            "- last_activity_at_ms: {}",
+            summary
+                .last_activity_at_ms
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_string())
+        ),
+        format!("- blockers: {}", blockers_label(&thread.blockers)),
+        format!("- messages: {}", summary.message_count),
+        format!("- unread: {}", summary.unread_count),
+        format!(
+            "- active_turn_id: {}",
+            thread.active_turn_id.as_deref().unwrap_or("none")
+        ),
+    ]
+    .join("\n")
 }
 
 pub(crate) fn format_feed_message(
@@ -512,8 +818,15 @@ fn workspace_summary_label(workspace: &super::SupervisorWorkspaceState) -> Strin
 #[cfg(test)]
 mod tests {
     use super::super::SupervisorHealth;
+    use super::super::SupervisorOpenQuestion;
+    use super::super::SupervisorPendingApproval;
+    use super::super::SupervisorSignal;
+    use super::super::SupervisorSignalKind;
+    use super::super::SupervisorThreadState;
+    use super::super::SupervisorThreadStatus;
     use super::super::SupervisorWorkspaceState;
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn parses_dispatch_command() {
@@ -553,6 +866,29 @@ mod tests {
             parse_supervisor_chat_command("/status ws-1").expect("status"),
             SupervisorChatCommand::Status {
                 workspace_id: Some("ws-1".to_string()),
+                thread_id: None,
+            }
+        );
+        assert_eq!(
+            parse_supervisor_chat_command("/статус ws-1").expect("status alias"),
+            SupervisorChatCommand::Status {
+                workspace_id: Some("ws-1".to_string()),
+                thread_id: None,
+            }
+        );
+        assert_eq!(
+            parse_supervisor_chat_command("/status ws-1 thread-2").expect("thread status"),
+            SupervisorChatCommand::Status {
+                workspace_id: Some("ws-1".to_string()),
+                thread_id: Some("thread-2".to_string()),
+            }
+        );
+        assert_eq!(
+            parse_supervisor_chat_command("/status --thread thread-2")
+                .expect("thread status without workspace"),
+            SupervisorChatCommand::Status {
+                workspace_id: None,
+                thread_id: Some("thread-2".to_string()),
             }
         );
         assert_eq!(
@@ -602,9 +938,235 @@ mod tests {
             },
         );
 
-        let message = format_status_message(&state, None).expect("status");
+        let message = format_status_message(&state, None, None).expect("status");
         assert!(message.contains("Global supervisor status:"));
         assert!(message.contains("ws-1"));
         assert!(message.contains("Workspace 1"));
+        assert!(message.contains("- threads: 0 active"));
+        assert!(message.contains("- threads_detail: none"));
+    }
+
+    #[test]
+    fn formats_status_message_with_workspace_thread_details_and_limit() {
+        let mut state = SupervisorState::default();
+        state.workspaces.insert(
+            "ws-1".to_string(),
+            SupervisorWorkspaceState {
+                id: "ws-1".to_string(),
+                name: "Workspace 1".to_string(),
+                connected: true,
+                current_task: Some("Handle alert".to_string()),
+                health: SupervisorHealth::Healthy,
+                ..Default::default()
+            },
+        );
+        for index in 0..12 {
+            state.threads.insert(
+                format!("ws-1:thread-{index}"),
+                SupervisorThreadState {
+                    id: format!("thread-{index}"),
+                    workspace_id: "ws-1".to_string(),
+                    name: Some(format!("Thread {index}")),
+                    status: if index == 11 {
+                        SupervisorThreadStatus::WaitingInput
+                    } else {
+                        SupervisorThreadStatus::Running
+                    },
+                    last_activity_at_ms: Some(1_000 + index as i64),
+                    ..Default::default()
+                },
+            );
+        }
+        state.activity_feed = vec![
+            SupervisorActivityEntry {
+                id: "activity-1".to_string(),
+                kind: "turn_started".to_string(),
+                message: "started".to_string(),
+                created_at_ms: 10,
+                workspace_id: Some("ws-1".to_string()),
+                thread_id: Some("thread-11".to_string()),
+                needs_input: false,
+                metadata: Value::Null,
+            },
+            SupervisorActivityEntry {
+                id: "activity-2".to_string(),
+                kind: "turn_completed".to_string(),
+                message: "completed".to_string(),
+                created_at_ms: 11,
+                workspace_id: Some("ws-1".to_string()),
+                thread_id: Some("thread-11".to_string()),
+                needs_input: false,
+                metadata: Value::Null,
+            },
+            SupervisorActivityEntry {
+                id: "activity-3".to_string(),
+                kind: "item_started".to_string(),
+                message: "item".to_string(),
+                created_at_ms: 12,
+                workspace_id: Some("ws-1".to_string()),
+                thread_id: Some("thread-10".to_string()),
+                needs_input: false,
+                metadata: Value::Null,
+            },
+        ];
+        state.signals = vec![
+            SupervisorSignal {
+                id: "signal-1".to_string(),
+                kind: SupervisorSignalKind::NeedsApproval,
+                workspace_id: Some("ws-1".to_string()),
+                thread_id: Some("thread-11".to_string()),
+                job_id: None,
+                message: "approval".to_string(),
+                created_at_ms: 12,
+                acknowledged_at_ms: None,
+                context: Value::Null,
+            },
+            SupervisorSignal {
+                id: "signal-2".to_string(),
+                kind: SupervisorSignalKind::NeedsApproval,
+                workspace_id: Some("ws-1".to_string()),
+                thread_id: Some("thread-10".to_string()),
+                job_id: None,
+                message: "acknowledged".to_string(),
+                created_at_ms: 11,
+                acknowledged_at_ms: Some(13),
+                context: Value::Null,
+            },
+        ];
+        state.open_questions.insert(
+            "q-1".to_string(),
+            SupervisorOpenQuestion {
+                id: "q-1".to_string(),
+                workspace_id: "ws-1".to_string(),
+                thread_id: "thread-11".to_string(),
+                question: "Proceed?".to_string(),
+                created_at_ms: 13,
+                resolved_at_ms: None,
+                context: Value::Null,
+            },
+        );
+        state.pending_approvals.insert(
+            "ws-1:1".to_string(),
+            SupervisorPendingApproval {
+                request_key: "ws-1:1".to_string(),
+                workspace_id: "ws-1".to_string(),
+                thread_id: Some("thread-11".to_string()),
+                turn_id: None,
+                item_id: None,
+                request_id: "1".to_string(),
+                method: "workspace/requestApproval".to_string(),
+                params: Value::Null,
+                created_at_ms: 13,
+                resolved_at_ms: None,
+            },
+        );
+
+        let message = format_status_message(&state, None, None).expect("status");
+        assert!(message.contains("- threads: 12 active"));
+        assert!(message.contains("- threads_detail (showing 10 of 12):"));
+        assert!(message.contains(
+            "`Thread 11` (`thread-11`) | status: waiting_input | last_activity_at_ms: 1011 | messages: 2 | unread: 3"
+        ));
+        assert!(message.contains("... and 2 more active thread(s)"));
+        let newest = message.find("`Thread 11` (`thread-11`)").expect("newest");
+        let older = message.find("`Thread 10` (`thread-10`)").expect("older");
+        assert!(newest < older);
+    }
+
+    #[test]
+    fn formats_workspace_status_message_with_thread_details() {
+        let mut state = SupervisorState::default();
+        state.workspaces.insert(
+            "ws-1".to_string(),
+            SupervisorWorkspaceState {
+                id: "ws-1".to_string(),
+                name: "Workspace 1".to_string(),
+                connected: true,
+                current_task: Some("Handle alert".to_string()),
+                health: SupervisorHealth::Healthy,
+                ..Default::default()
+            },
+        );
+        state.threads.insert(
+            "ws-1:thread-1".to_string(),
+            SupervisorThreadState {
+                id: "thread-1".to_string(),
+                workspace_id: "ws-1".to_string(),
+                name: Some("Ops".to_string()),
+                status: SupervisorThreadStatus::Running,
+                last_activity_at_ms: Some(100),
+                ..Default::default()
+            },
+        );
+        state.activity_feed = vec![SupervisorActivityEntry {
+            id: "activity-1".to_string(),
+            kind: "turn_started".to_string(),
+            message: "started".to_string(),
+            created_at_ms: 10,
+            workspace_id: Some("ws-1".to_string()),
+            thread_id: Some("thread-1".to_string()),
+            needs_input: false,
+            metadata: Value::Null,
+        }];
+
+        let message = format_status_message(&state, Some("ws-1"), None).expect("status");
+        assert!(message.contains("Status for workspace"));
+        assert!(message.contains("- threads: 1"));
+        assert!(message.contains("- threads_detail (showing 1 of 1):"));
+        assert!(message.contains(
+            "`Ops` (`thread-1`) | status: running | last_activity_at_ms: 100 | messages: 1 | unread: 0"
+        ));
+    }
+
+    #[test]
+    fn formats_thread_status_message() {
+        let mut state = SupervisorState::default();
+        state.workspaces.insert(
+            "ws-1".to_string(),
+            SupervisorWorkspaceState {
+                id: "ws-1".to_string(),
+                name: "Workspace 1".to_string(),
+                connected: true,
+                current_task: Some("Handle alert".to_string()),
+                health: SupervisorHealth::Healthy,
+                ..Default::default()
+            },
+        );
+        state.threads.insert(
+            "ws-1:thread-7".to_string(),
+            SupervisorThreadState {
+                id: "thread-7".to_string(),
+                workspace_id: "ws-1".to_string(),
+                name: Some("Ops".to_string()),
+                status: SupervisorThreadStatus::WaitingInput,
+                current_task: Some("Need approval".to_string()),
+                last_activity_at_ms: Some(105),
+                next_expected_step: Some("Reply to prompt".to_string()),
+                blockers: vec!["human input".to_string()],
+                active_turn_id: Some("turn-7".to_string()),
+            },
+        );
+        state.activity_feed = vec![SupervisorActivityEntry {
+            id: "activity-1".to_string(),
+            kind: "turn_started".to_string(),
+            message: "started".to_string(),
+            created_at_ms: 10,
+            workspace_id: Some("ws-1".to_string()),
+            thread_id: Some("thread-7".to_string()),
+            needs_input: false,
+            metadata: Value::Null,
+        }];
+
+        let message =
+            format_status_message(&state, Some("ws-1"), Some("thread-7")).expect("thread status");
+        assert!(message.contains("Status for thread `Ops` (`thread-7`)"));
+        assert!(message.contains("- status: waiting_input"));
+        assert!(message.contains("- current_task: Need approval"));
+        assert!(message.contains("- next_step: Reply to prompt"));
+        assert!(message.contains("- last_activity_at_ms: 105"));
+        assert!(message.contains("- blockers: human input"));
+        assert!(message.contains("- messages: 1"));
+        assert!(message.contains("- unread: 0"));
+        assert!(message.contains("- active_turn_id: turn-7"));
     }
 }

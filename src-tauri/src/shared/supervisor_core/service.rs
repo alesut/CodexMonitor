@@ -297,7 +297,7 @@ async fn execute_local_tool_route(
     match tool {
         SupervisorLocalTool::Status => {
             let snapshot = supervisor_snapshot_core(supervisor_loop).await;
-            format_status_message(&snapshot, None)
+            format_status_message(&snapshot, None, None)
         }
         SupervisorLocalTool::Feed => {
             let feed =
@@ -627,7 +627,10 @@ async fn execute_parsed_supervisor_chat_command(
 ) -> Result<String, String> {
     match command {
         SupervisorChatCommand::Help => Ok(format_help_message()),
-        SupervisorChatCommand::Status { workspace_id } => {
+        SupervisorChatCommand::Status {
+            workspace_id,
+            thread_id,
+        } => {
             let mut snapshot = supervisor_snapshot_core(supervisor_loop).await;
             let workspaces = workspaces.lock().await;
             for entry in workspaces.values() {
@@ -635,7 +638,7 @@ async fn execute_parsed_supervisor_chat_command(
                     workspace.name = entry.name.clone();
                 }
             }
-            format_status_message(&snapshot, workspace_id.as_deref())
+            format_status_message(&snapshot, workspace_id.as_deref(), thread_id.as_deref())
         }
         SupervisorChatCommand::Feed { needs_input_only } => {
             let feed = supervisor_feed_core(
