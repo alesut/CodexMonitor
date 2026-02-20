@@ -467,7 +467,7 @@ impl SupervisorLoop {
                     job.status = SupervisorJobStatus::Running;
                     job.thread_id = Some(thread_id.clone());
                     job.error = None;
-                    let added = Self::append_subtask_event(
+                    Self::append_subtask_event(
                         &mut job,
                         SupervisorSubtaskEvent {
                             id: format!("turn_started:{}:{}:{turn_id}", workspace_id, thread_id),
@@ -481,14 +481,6 @@ impl SupervisorLoop {
                         &mut self.state,
                         SupervisorStateUpdate::UpsertJob(job.clone()),
                     );
-                    if added {
-                        self.push_subtask_chat_message(
-                            &job,
-                            format!("Progress update: turn `{turn_id}` started."),
-                            "turn_started",
-                            received_at_ms,
-                        );
-                    }
                 }
             }
             SupervisorEvent::TurnCompleted {
@@ -592,7 +584,7 @@ impl SupervisorLoop {
 
                 if let Some(mut job) = self.job_for_event(&workspace_id, Some(&thread_id)) {
                     job.status = SupervisorJobStatus::Running;
-                    let added = Self::append_subtask_event(
+                    Self::append_subtask_event(
                         &mut job,
                         SupervisorSubtaskEvent {
                             id: format!("item_started:{}:{}:{item_id}", workspace_id, thread_id),
@@ -614,17 +606,6 @@ impl SupervisorLoop {
                         &mut self.state,
                         SupervisorStateUpdate::UpsertJob(job.clone()),
                     );
-                    if added {
-                        self.push_subtask_chat_message(
-                            &job,
-                            format!(
-                                "Progress update: item `{}` started.",
-                                item_type.as_deref().unwrap_or("unknown").trim()
-                            ),
-                            "item_started",
-                            received_at_ms,
-                        );
-                    }
                 }
             }
             SupervisorEvent::ItemCompleted {
@@ -685,25 +666,19 @@ impl SupervisorLoop {
                         SupervisorStateUpdate::UpsertJob(job.clone()),
                     );
                     if added {
-                        let mut chat_message = format!(
-                            "Progress update: item `{}` completed.",
-                            item_type.as_deref().unwrap_or("unknown").trim()
-                        );
                         if item_type
                             .as_deref()
                             .is_some_and(|value| value.eq_ignore_ascii_case("agentMessage"))
                         {
-                            if let Some(content) = item_content.as_deref() {
-                                chat_message =
-                                    format!("Agent response: {}", summarize_text(content, 240));
+                            if let Some(content) = item_content.as_deref().or(task.as_deref()) {
+                                self.push_subtask_chat_message(
+                                    &job,
+                                    format!("Agent response: {}", summarize_text(content, 240)),
+                                    "item_completed",
+                                    received_at_ms,
+                                );
                             }
                         }
-                        self.push_subtask_chat_message(
-                            &job,
-                            chat_message,
-                            "item_completed",
-                            received_at_ms,
-                        );
                     }
                 }
             }
@@ -1451,6 +1426,62 @@ mod tests {
             .expect("workspace should exist");
         assert_eq!(workspace.health, SupervisorHealth::Healthy);
         assert_eq!(workspace.active_thread_id.as_deref(), Some("thread-2"));
+    }
+
+    #[test]
+    fn suppresses_lifecycle_noise_messages_in_supervisor_chat() {
+        let mut loop_state = SupervisorLoop::new(SupervisorLoopConfig::default());
+        loop_state.upsert_job(tracked_running_job("job-noise", "ws-1", "thread-1"));
+
+        loop_state.apply_app_server_event(
+            "ws-1",
+            &json!({
+                "method": "turn/started",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1"
+                }
+            }),
+            10,
+        );
+        loop_state.apply_app_server_event(
+            "ws-1",
+            &json!({
+                "method": "item/started",
+                "params": {
+                    "threadId": "thread-1",
+                    "itemId": "item-1",
+                    "item": {
+                        "id": "item-1",
+                        "type": "userMessage",
+                        "text": "Working on it"
+                    }
+                }
+            }),
+            11,
+        );
+        loop_state.apply_app_server_event(
+            "ws-1",
+            &json!({
+                "method": "item/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "itemId": "item-1",
+                    "item": {
+                        "id": "item-1",
+                        "type": "userMessage",
+                        "text": "Working on it"
+                    }
+                }
+            }),
+            12,
+        );
+
+        let history = loop_state.chat_history();
+        assert!(
+            history.is_empty(),
+            "expected lifecycle-only events to stay out of supervisor chat by default"
+        );
     }
 
     #[test]
