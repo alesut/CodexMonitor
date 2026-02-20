@@ -375,7 +375,7 @@ impl SupervisorLoop {
         );
         self.push_subtask_chat_message(
             &updated,
-            format!("Reply delivered to child task request `{request_key}`. Continuing execution."),
+            "Reply delivered to child task. Continuing execution.".to_string(),
             "reply_delivered",
             delivered_at_ms,
         );
@@ -758,10 +758,7 @@ impl SupervisorLoop {
                     if added {
                         self.push_subtask_chat_message(
                             &job,
-                            format!(
-                                "Child task asks: {question}\nReply in this chat to continue (subtask `{}`).",
-                                job.id
-                            ),
+                            format!("Child task asks: {question}\nReply in this chat to continue."),
                             "waiting_for_user",
                             received_at_ms,
                         );
@@ -1066,15 +1063,10 @@ impl SupervisorLoop {
         kind: &str,
         created_at_ms: i64,
     ) {
-        let thread_label = job.thread_id.as_deref().unwrap_or("-");
-        let prefix = format!(
-            "[subtask:{} ws:{} thread:{}]",
-            job.id, job.workspace_id, thread_label
-        );
         self.append_chat_message(SupervisorChatMessage {
             id: format!("chat-bridge:{kind}:{}:{created_at_ms}", job.id),
             role: SupervisorChatMessageRole::System,
-            text: format!("{prefix} {message}"),
+            text: message,
             created_at_ms,
         });
     }
@@ -1541,6 +1533,12 @@ mod tests {
                 .any(|message| message.text.contains("Subtask completed.")),
             "expected completion summary in supervisor chat"
         );
+        assert!(
+            history
+                .iter()
+                .all(|message| !message.text.contains("[subtask:")),
+            "expected user-facing chat messages without technical prefixes"
+        );
     }
 
     #[test]
@@ -1579,6 +1577,18 @@ mod tests {
                 .contains("Child task asks: Should I restart the service?")),
             "expected bridged child clarification in supervisor chat"
         );
+        assert!(
+            history
+                .iter()
+                .any(|message| message.text.contains("Reply in this chat to continue.")),
+            "expected child clarification instructions without subtask identifiers"
+        );
+        assert!(
+            history
+                .iter()
+                .all(|message| !message.text.contains("[subtask:")),
+            "expected user-facing chat messages without technical prefixes"
+        );
     }
 
     #[test]
@@ -1611,6 +1621,12 @@ mod tests {
                 .text
                 .contains("Child task failed: Build failed on step test")),
             "expected bridged child failure in supervisor chat"
+        );
+        assert!(
+            history
+                .iter()
+                .all(|message| !message.text.contains("[subtask:")),
+            "expected user-facing chat messages without technical prefixes"
         );
     }
 }
