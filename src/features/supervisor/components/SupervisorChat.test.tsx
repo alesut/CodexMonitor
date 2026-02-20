@@ -115,4 +115,28 @@ describe("SupervisorChat", () => {
       );
     });
   });
+
+  it("collapses technical system details until expanded", async () => {
+    vi.mocked(getSupervisorChatHistory).mockResolvedValueOnce({
+      messages: [
+        {
+          id: "msg-technical",
+          role: "system",
+          text: "Child task completed.\nRoute: workspace_delegate\nReason: explicit route",
+          created_at_ms: Date.now(),
+        },
+      ],
+    });
+
+    render(<SupervisorChat {...baseProps} />);
+
+    expect(await screen.findByText("Child task completed.")).toBeTruthy();
+    expect(screen.getByText("Technical details hidden")).toBeTruthy();
+    expect(screen.queryByText(/Route: workspace_delegate/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show technical details" }));
+
+    expect(await screen.findByText(/Route: workspace_delegate/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Hide technical details" })).toBeTruthy();
+  });
 });
