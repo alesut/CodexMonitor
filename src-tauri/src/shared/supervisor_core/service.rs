@@ -1532,8 +1532,22 @@ mod tests {
             assert!(
                 chat.messages
                     .iter()
-                    .any(|message| message.text.contains("Subtask completed.")),
+                    .any(|message| message.text.contains("Child task completed.")),
                 "missing completion summary in supervisor chat"
+            );
+            assert!(
+                chat.messages.iter().any(|message| {
+                    message
+                        .text
+                        .contains("Next action: Review the output and send follow-up instructions if needed.")
+                }),
+                "missing actionable follow-up guidance in completion summary"
+            );
+            assert!(
+                chat.messages
+                    .iter()
+                    .all(|message| !message.text.contains("[subtask:")),
+                "completion bridge should not expose technical chat prefixes"
             );
         });
     }
