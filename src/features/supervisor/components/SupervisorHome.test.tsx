@@ -129,6 +129,9 @@ describe("SupervisorHome", () => {
     expect(
       (await screen.findAllByText("Approval required for deployment")).length,
     ).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Needs approval")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Awaiting approval decision")).toBeTruthy();
+    expect((await screen.findAllByText("Pending signals")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Deployment run completed")).toBeTruthy();
     expect(screen.getByText("Workspaces")).toBeTruthy();
     expect(vi.mocked(getSupervisorSnapshot)).toHaveBeenCalled();

@@ -413,6 +413,43 @@
   gap: 8px;
 }
 
+.supervisor-action-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.supervisor-action-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--surface-card);
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 3px 9px;
+}
+
+.supervisor-action-chip strong {
+  color: var(--text-strong);
+}
+
+.supervisor-action-chip.is-critical {
+  border-color: color-mix(in srgb, var(--status-error) 42%, transparent);
+  color: var(--status-error);
+}
+
+.supervisor-action-chip.is-attention {
+  border-color: color-mix(in srgb, var(--status-warning) 42%, transparent);
+  color: var(--status-warning);
+}
+
+.supervisor-action-chip.is-info {
+  border-color: color-mix(in srgb, var(--status-info, #3b82f6) 40%, transparent);
+  color: color-mix(in srgb, var(--status-info, #3b82f6) 75%, var(--text-strong));
+}
+
 .supervisor-signal-list-priority {
   max-height: 340px;
   overflow-y: auto;
@@ -432,32 +469,66 @@
 .supervisor-signal-main {
   display: flex;
   align-items: flex-start;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.supervisor-signal-severity {
+  font-size: 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  padding: 2px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.supervisor-signal-severity.is-critical {
+  color: var(--status-error);
+  border-color: color-mix(in srgb, var(--status-error) 45%, transparent);
+}
+
+.supervisor-signal-severity.is-attention {
+  color: var(--status-warning);
+  border-color: color-mix(in srgb, var(--status-warning) 45%, transparent);
+}
+
+.supervisor-signal-severity.is-info {
+  color: color-mix(in srgb, var(--status-info, #3b82f6) 85%, var(--text-strong));
+  border-color: color-mix(in srgb, var(--status-info, #3b82f6) 44%, transparent);
 }
 
 .supervisor-signal-kind {
   font-size: 11px;
   border-radius: 999px;
+  border: 1px solid var(--border-subtle);
   padding: 2px 8px;
   background: var(--surface-hover);
-  text-transform: lowercase;
+  color: var(--text-muted);
 }
 
-.supervisor-signal-kind.is-failed {
+.supervisor-signal-kind.is-critical {
   color: var(--status-error);
+  border-color: color-mix(in srgb, var(--status-error) 38%, transparent);
 }
 
-.supervisor-signal-kind.is-needs_approval {
+.supervisor-signal-kind.is-attention {
   color: var(--status-warning);
+  border-color: color-mix(in srgb, var(--status-warning) 38%, transparent);
 }
 
-.supervisor-signal-kind.is-completed {
-  color: var(--status-success);
+.supervisor-signal-kind.is-info {
+  color: color-mix(in srgb, var(--status-info, #3b82f6) 85%, var(--text-strong));
+  border-color: color-mix(in srgb, var(--status-info, #3b82f6) 38%, transparent);
 }
 
 .supervisor-signal-message {
   font-size: 13px;
   color: var(--text-strong);
+}
+
+.supervisor-signal-status-text {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .supervisor-signal-approval {

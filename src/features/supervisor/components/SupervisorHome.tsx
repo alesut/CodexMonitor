@@ -57,6 +57,66 @@ function formatApprovalMethod(value: string) {
   return trimmed || value;
 }
 
+type SignalSeverity = "critical" | "attention" | "info";
+
+function signalSeverity(kind: string): SignalSeverity {
+  switch (kind) {
+    case "failed":
+    case "disconnected":
+      return "critical";
+    case "needs_approval":
+    case "stalled":
+      return "attention";
+    default:
+      return "info";
+  }
+}
+
+function formatSignalKindLabel(kind: string) {
+  switch (kind) {
+    case "needs_approval":
+      return "Needs approval";
+    case "failed":
+      return "Failure";
+    case "stalled":
+      return "Stalled";
+    case "disconnected":
+      return "Disconnected";
+    case "completed":
+      return "Completed";
+    default:
+      return kind.replace(/_/g, " ");
+  }
+}
+
+function formatSignalStatusLabel(kind: string) {
+  switch (kind) {
+    case "needs_approval":
+      return "Awaiting approval decision";
+    case "failed":
+      return "Needs follow-up";
+    case "stalled":
+      return "Needs attention";
+    case "disconnected":
+      return "Workspace disconnected";
+    case "completed":
+      return "Awaiting acknowledgment";
+    default:
+      return "Pending review";
+  }
+}
+
+function formatSeverityLabel(severity: SignalSeverity) {
+  switch (severity) {
+    case "critical":
+      return "Critical";
+    case "attention":
+      return "Attention";
+    default:
+      return "Info";
+  }
+}
+
 function formatSummaryValue(value: unknown): string {
   if (value === null || value === undefined) {
     return "none";
@@ -251,6 +311,37 @@ export function SupervisorHome({
   ]);
   const lastUpdatedLabel =
     lastRefreshedAtMs === null ? "syncing..." : formatSupervisorTime(lastRefreshedAtMs);
+  const actionCenterChips = useMemo(() => {
+    const criticalCount = pendingSignals.filter(
+      (signal) => signalSeverity(signal.kind) === "critical",
+    ).length;
+    return [
+      {
+        key: "critical",
+        label: "Critical",
+        value: criticalCount,
+        severity: "critical" as const,
+      },
+      {
+        key: "needs-input",
+        label: "Needs input",
+        value: openQuestionsCount,
+        severity: "attention" as const,
+      },
+      {
+        key: "approvals",
+        label: "Approvals",
+        value: pendingApprovalsCount,
+        severity: "attention" as const,
+      },
+      {
+        key: "pending-signals",
+        label: "Pending signals",
+        value: pendingSignals.length,
+        severity: "info" as const,
+      },
+    ].filter((chip) => chip.value > 0);
+  }, [openQuestionsCount, pendingApprovalsCount, pendingSignals]);
 
   return (
     <div className="supervisor-home">
@@ -301,11 +392,24 @@ export function SupervisorHome({
           <h2>Action center</h2>
           <span>{pendingSignals.length} pending</span>
         </div>
+        {actionCenterChips.length > 0 ? (
+          <div className="supervisor-action-chips">
+            {actionCenterChips.map((chip) => (
+              <span
+                key={chip.key}
+                className={`supervisor-action-chip is-${chip.severity}`}
+              >
+                <strong>{chip.value}</strong> {chip.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
         {pendingSignals.length === 0 ? (
           <p className="supervisor-home-empty">No actions waiting for your input.</p>
         ) : (
           <ul className="supervisor-signal-list supervisor-signal-list-priority">
             {pendingSignals.map((signal) => {
+              const severity = signalSeverity(signal.kind);
               const requestKey =
                 signal.kind === "needs_approval"
                   ? extractSignalRequestKey(signal.id, signal.context)
@@ -325,15 +429,21 @@ export function SupervisorHome({
                 : null;
               const isApprovalActionBusy =
                 approvalKey !== null && decidingApprovalKey === approvalKey;
+              const kindLabel = formatSignalKindLabel(signal.kind);
+              const statusLabel = formatSignalStatusLabel(signal.kind);
 
               return (
                 <li key={signal.id} className="supervisor-signal-item">
                   <div className="supervisor-signal-main">
-                    <span className={`supervisor-signal-kind is-${signal.kind}`}>
-                      {signal.kind}
+                    <span className={`supervisor-signal-severity is-${severity}`}>
+                      {formatSeverityLabel(severity)}
+                    </span>
+                    <span className={`supervisor-signal-kind is-${severity}`}>
+                      {kindLabel}
                     </span>
                     <span className="supervisor-signal-message">{signal.message}</span>
                   </div>
+                  <div className="supervisor-signal-status-text">{statusLabel}</div>
 
                   {signal.kind === "needs_approval" ? (
                     <div className="supervisor-signal-approval">
@@ -620,11 +730,15 @@ export function SupervisorHome({
             <ul className="supervisor-signal-list">
               {signalList.map((signal) => {
                 const isPending = signal.acknowledged_at_ms === null;
+                const severity = signalSeverity(signal.kind);
                 return (
                   <li key={signal.id} className="supervisor-signal-item">
                     <div className="supervisor-signal-main">
-                      <span className={`supervisor-signal-kind is-${signal.kind}`}>
-                        {signal.kind}
+                      <span className={`supervisor-signal-severity is-${severity}`}>
+                        {formatSeverityLabel(severity)}
+                      </span>
+                      <span className={`supervisor-signal-kind is-${severity}`}>
+                        {formatSignalKindLabel(signal.kind)}
                       </span>
                       <span className="supervisor-signal-message">{signal.message}</span>
                     </div>
