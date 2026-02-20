@@ -218,6 +218,9 @@ pub(crate) fn format_help_message() -> String {
         "- /status [workspace_id]",
         "- /feed [needs_input]",
         "- /help",
+        "",
+        "Free-form chat:",
+        "- Any message without `/` is dispatched to all connected workspaces.",
     ]
     .join("\n")
 }

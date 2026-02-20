@@ -94,7 +94,7 @@ export function SupervisorChat({
       <div className="supervisor-chat-header">
         <div>
           <h2>Global chat</h2>
-          <p>Run structured Supervisor commands from one control point.</p>
+          <p>Chat with Supervisor or run structured commands from one control point.</p>
         </div>
         <button
           type="button"
@@ -116,7 +116,7 @@ export function SupervisorChat({
         ) : null}
         {!isLoading && messages.length === 0 ? (
           <p className="supervisor-home-empty">
-            No commands yet. Try <code>/help</code>.
+            No messages yet. Ask a question or try <code>/help</code>.
           </p>
         ) : null}
         {messages.length > 0 ? (
@@ -168,7 +168,7 @@ export function SupervisorChat({
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleTextareaKeyDown}
-          placeholder='Type a command (e.g. /dispatch --ws ws-1,ws-2 --prompt "Run smoke tests")'
+          placeholder='Type a message or command (e.g. "Run smoke tests" or /status)'
           rows={3}
           disabled={isSending}
         />

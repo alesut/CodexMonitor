@@ -13,6 +13,7 @@ use super::chat::{
     build_dispatch_contract, format_ack_message, format_dispatch_message, format_feed_message,
     format_help_message, format_status_message, parse_supervisor_chat_command,
     SupervisorChatCommand, SupervisorChatHistoryResponse, SupervisorChatSendResponse,
+    SupervisorChatDispatchRequest,
     SUPERVISOR_CHAT_FEED_LIMIT,
 };
 use super::contract::parse_supervisor_action_contract_value;
@@ -123,13 +124,33 @@ async fn execute_supervisor_chat_command(
     command: &str,
     received_at_ms: i64,
 ) -> String {
+    if command.starts_with('/') {
+        let execution = async {
+            let command = parse_supervisor_chat_command(command)?;
+            execute_parsed_supervisor_chat_command(
+                supervisor_loop,
+                dispatch_executor,
+                sessions,
+                command,
+                received_at_ms,
+            )
+            .await
+        }
+        .await;
+
+        return match execution {
+            Ok(response) => response,
+            Err(error) => format!("Error: {error}\nRun `/help` for command usage."),
+        };
+    }
+
     let execution = async {
-        let command = parse_supervisor_chat_command(command)?;
+        let request = build_freeform_dispatch_request(supervisor_loop, command).await?;
         execute_parsed_supervisor_chat_command(
             supervisor_loop,
             dispatch_executor,
             sessions,
-            command,
+            SupervisorChatCommand::Dispatch(request),
             received_at_ms,
         )
         .await
@@ -138,8 +159,36 @@ async fn execute_supervisor_chat_command(
 
     match execution {
         Ok(response) => response,
-        Err(error) => format!("Error: {error}\nRun `/help` for command usage."),
+        Err(error) => format!("Unable to route chat message: {error}"),
     }
+}
+
+async fn build_freeform_dispatch_request(
+    supervisor_loop: &Arc<Mutex<SupervisorLoop>>,
+    prompt: &str,
+) -> Result<SupervisorChatDispatchRequest, String> {
+    let snapshot = supervisor_snapshot_core(supervisor_loop).await;
+    let workspace_ids = snapshot
+        .workspaces
+        .values()
+        .filter(|workspace| workspace.connected)
+        .map(|workspace| workspace.id.trim())
+        .filter(|workspace_id| !workspace_id.is_empty())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    if workspace_ids.is_empty() {
+        return Err(
+            "no connected workspaces available; connect one or use `/dispatch --ws ...`"
+                .to_string(),
+        );
+    }
+
+    Ok(SupervisorChatDispatchRequest {
+        workspace_ids,
+        prompt: prompt.to_string(),
+        thread_id: None,
+        dedupe_key: None,
+    })
 }
 
 async fn execute_parsed_supervisor_chat_command(
@@ -553,7 +602,7 @@ mod tests {
                 &supervisor_loop,
                 &dispatch_executor,
                 &sessions,
-                "status",
+                "/dispatch --ws ws-1",
                 100,
             )
             .await
@@ -563,7 +612,85 @@ mod tests {
             let system_message = response.messages.last().expect("system message");
             assert_eq!(system_message.role, SupervisorChatMessageRole::System);
             assert!(
-                system_message.text.contains("commands must start with `/`"),
+                system_message.text.contains("`--prompt` is required"),
+                "unexpected response text: {}",
+                system_message.text
+            );
+        });
+    }
+
+    #[test]
+    fn supervisor_chat_send_core_routes_freeform_chat_without_slash() {
+        run_async(async {
+            let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
+                SupervisorLoopConfig::default(),
+            )));
+            {
+                let mut supervisor_loop = supervisor_loop.lock().await;
+                supervisor_loop.apply_app_server_event(
+                    "ws-1",
+                    &json!({
+                        "method": "codex/connected",
+                    }),
+                    100,
+                );
+            }
+
+            let dispatch_executor = Arc::new(Mutex::new(SupervisorDispatchExecutor::new()));
+            let sessions = Mutex::new(HashMap::new());
+
+            let response = supervisor_chat_send_core(
+                &supervisor_loop,
+                &dispatch_executor,
+                &sessions,
+                "run smoke tests",
+                200,
+            )
+            .await
+            .expect("chat send");
+
+            let system_message = response.messages.last().expect("system message");
+            assert_eq!(system_message.role, SupervisorChatMessageRole::System);
+            assert!(
+                system_message
+                    .text
+                    .contains("Dispatch completed for 1 workspace(s):"),
+                "unexpected response text: {}",
+                system_message.text
+            );
+            assert!(
+                system_message.text.contains("Prompt: run smoke tests"),
+                "unexpected response text: {}",
+                system_message.text
+            );
+        });
+    }
+
+    #[test]
+    fn supervisor_chat_send_core_reports_when_freeform_has_no_connected_workspaces() {
+        run_async(async {
+            let supervisor_loop = Arc::new(Mutex::new(SupervisorLoop::new(
+                SupervisorLoopConfig::default(),
+            )));
+            let dispatch_executor = Arc::new(Mutex::new(SupervisorDispatchExecutor::new()));
+            let sessions = Mutex::new(HashMap::new());
+
+            let response = supervisor_chat_send_core(
+                &supervisor_loop,
+                &dispatch_executor,
+                &sessions,
+                "status",
+                100,
+            )
+            .await
+            .expect("chat send");
+
+            let system_message = response.messages.last().expect("system message");
+            assert_eq!(system_message.role, SupervisorChatMessageRole::System);
+            assert!(
+                system_message
+                    .text
+                    .contains("Unable to route chat message: no connected workspaces available"),
                 "unexpected response text: {}",
                 system_message.text
             );
