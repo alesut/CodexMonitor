@@ -107,6 +107,79 @@ describe("useSupervisorSignalAlerts", () => {
     );
   });
 
+  it("uses pending approval details to replace generic approval signal text", async () => {
+    const now = Date.now();
+    vi.mocked(getSupervisorSnapshot).mockResolvedValueOnce({
+      ...baseSnapshot(),
+      workspaces: {
+        "ws-1": {
+          id: "ws-1",
+          name: "Primary",
+          connected: true,
+          current_task: null,
+          last_activity_at_ms: null,
+          next_expected_step: null,
+          blockers: [],
+          health: "healthy",
+          active_thread_id: null,
+        },
+      },
+      pending_approvals: {
+        "ws-1:42": {
+          request_key: "ws-1:42",
+          workspace_id: "ws-1",
+          thread_id: "019c7b1f-6c51-7ad3-b2da-d02da5937f74",
+          turn_id: null,
+          item_id: null,
+          request_id: "42",
+          method: "codex/requestApproval/shell",
+          params: {
+            command: ["npm", "run", "typecheck"],
+          },
+          created_at_ms: now,
+          resolved_at_ms: null,
+        },
+      },
+      signals: [
+        {
+          id: "s-approval",
+          kind: "needs_approval",
+          workspace_id: "ws-1",
+          thread_id: "019c7b1f-6c51-7ad3-b2da-d02da5937f74",
+          job_id: null,
+          message: "Action requires approval",
+          created_at_ms: now,
+          acknowledged_at_ms: null,
+          context: { requestKey: "ws-1:42" },
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useSupervisorSignalAlerts());
+
+    await waitFor(() => {
+      expect(result.current.pendingCriticalSignalsCount).toBe(1);
+    });
+
+    expect(pushErrorToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "supervisor-signal-s-approval",
+        title: "Supervisor approval needed - Primary",
+        message: expect.stringContaining("Command awaiting approval: npm run typecheck"),
+      }),
+    );
+    expect(pushErrorToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.not.stringContaining("Action requires approval"),
+      }),
+    );
+    expect(pushErrorToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("thread 019c7b1f...7f74"),
+      }),
+    );
+  });
+
   it("does not duplicate toast for already announced signals on event refresh", async () => {
     vi.mocked(getSupervisorSnapshot)
       .mockResolvedValueOnce({

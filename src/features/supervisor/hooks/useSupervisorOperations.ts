@@ -146,9 +146,22 @@ export function useSupervisorOperations() {
     [snapshot],
   );
   const signalList = snapshot?.signals ?? [];
-  const pendingSignals = signalList.filter((signal) => signal.acknowledged_at_ms === null);
+  const pendingSignals = useMemo(
+    () =>
+      signalList
+        .filter((signal) => signal.acknowledged_at_ms === null)
+        .sort((left, right) => right.created_at_ms - left.created_at_ms),
+    [signalList],
+  );
   const openQuestionsCount = Object.keys(snapshot?.open_questions ?? {}).length;
-  const pendingApprovalsCount = Object.keys(snapshot?.pending_approvals ?? {}).length;
+  const pendingApprovals = useMemo(
+    () =>
+      Object.values(snapshot?.pending_approvals ?? {}).sort(
+        (left, right) => right.created_at_ms - left.created_at_ms,
+      ),
+    [snapshot],
+  );
+  const pendingApprovalsCount = pendingApprovals.length;
   const activityNeedsInputCount = feedItems.filter((entry) => entry.needs_input).length;
 
   return {
@@ -161,6 +174,7 @@ export function useSupervisorOperations() {
     feedTotal,
     openQuestionsCount,
     pendingApprovalsCount,
+    pendingApprovals,
     activityNeedsInputCount,
     needsInputOnly,
     setNeedsInputOnly,

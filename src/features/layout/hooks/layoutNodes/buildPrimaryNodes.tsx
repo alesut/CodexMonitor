@@ -233,6 +233,8 @@ export function buildPrimaryNodes(options: LayoutNodesOptions): PrimaryLayoutNod
 
   const homeNode = options.homeSection === "supervisor" ? (
     <SupervisorHome
+      approvals={options.approvals}
+      onApprovalDecision={options.handleApprovalDecision}
       dictationEnabled={options.dictationEnabled}
       dictationState={options.dictationState}
       dictationLevel={options.dictationLevel}

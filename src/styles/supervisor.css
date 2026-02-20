@@ -241,6 +241,13 @@
   gap: 10px;
 }
 
+.supervisor-section-priority {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--surface-canvas) 70%, transparent);
+}
+
 .supervisor-section-header {
   display: flex;
   align-items: center;
@@ -344,6 +351,12 @@
   gap: 8px;
 }
 
+.supervisor-signal-list-priority {
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
 .supervisor-signal-item {
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
@@ -356,7 +369,7 @@
 
 .supervisor-signal-main {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 
@@ -383,6 +396,35 @@
 .supervisor-signal-message {
   font-size: 13px;
   color: var(--text-strong);
+}
+
+.supervisor-signal-approval {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.supervisor-signal-approval-method {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.supervisor-signal-approval-summary {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.supervisor-signal-command {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-card);
+  padding: 8px;
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
 .supervisor-thread-list,
@@ -564,11 +606,17 @@
 
 .supervisor-signal-meta {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.supervisor-signal-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .supervisor-signal-ack {
@@ -577,6 +625,10 @@
   background: var(--surface-card);
   color: var(--text-strong);
   padding: 4px 8px;
+}
+
+.supervisor-signal-pending {
+  color: var(--status-warning);
 }
 
 .supervisor-signal-acked {
@@ -599,6 +651,19 @@
 @media (max-width: 1100px) {
   .supervisor-grid {
     grid-template-columns: 1fr;
+  }
+
+  .supervisor-section-priority {
+    top: 8px;
+  }
+
+  .supervisor-signal-meta {
+    flex-direction: column;
+  }
+
+  .supervisor-signal-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .supervisor-chat-actions {

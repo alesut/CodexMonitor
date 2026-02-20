@@ -93,6 +93,8 @@ function cloneFeed() {
 }
 
 const supervisorHomeProps = {
+  approvals: [],
+  onApprovalDecision: vi.fn(),
   dictationEnabled: true,
   dictationState: "idle" as const,
   dictationLevel: 0,
@@ -116,6 +118,7 @@ describe("SupervisorHome", () => {
     vi.mocked(getSupervisorFeed).mockResolvedValue(cloneFeed());
     vi.mocked(ackSupervisorSignal).mockResolvedValue({ ok: true });
     vi.mocked(subscribeSupervisorEvents).mockImplementation(() => () => {});
+    supervisorHomeProps.onApprovalDecision.mockReset();
   });
 
   it("renders snapshot workspace and pending signal", async () => {
@@ -123,7 +126,9 @@ describe("SupervisorHome", () => {
 
     expect(await screen.findByText("Supervisor")).toBeTruthy();
     expect(await screen.findByText("Workspace Alpha")).toBeTruthy();
-    expect(await screen.findByText("Approval required for deployment")).toBeTruthy();
+    expect(
+      (await screen.findAllByText("Approval required for deployment")).length,
+    ).toBeGreaterThan(0);
     expect(await screen.findByText("Deployment run completed")).toBeTruthy();
     expect(screen.getByText("Workspaces")).toBeTruthy();
     expect(vi.mocked(getSupervisorSnapshot)).toHaveBeenCalled();
@@ -200,5 +205,70 @@ describe("SupervisorHome", () => {
     expect(await screen.findByText(/Model gpt-5-mini/)).toBeTruthy();
     expect(screen.getByText(/Effort high/)).toBeTruthy();
     expect(screen.getByText(/Access full-access/)).toBeTruthy();
+  });
+
+  it("approves inline when signal maps to a pending approval", async () => {
+    const snapshotWithApproval = cloneSnapshot();
+    snapshotWithApproval.signals = [
+      {
+        id: "approval:ws-1:42",
+        kind: "needs_approval",
+        workspace_id: "ws-1",
+        thread_id: "thread-1",
+        job_id: null,
+        message: "Action requires approval",
+        created_at_ms: Date.now(),
+        acknowledged_at_ms: null,
+        context: { requestKey: "ws-1:42" },
+      },
+    ];
+    snapshotWithApproval.pending_approvals = {
+      "ws-1:42": {
+        request_key: "ws-1:42",
+        workspace_id: "ws-1",
+        thread_id: "thread-1",
+        turn_id: "turn-1",
+        item_id: "item-1",
+        request_id: "42",
+        method: "codex/requestApproval/exec_command",
+        params: { command: ["npm", "run", "verify"] },
+        created_at_ms: Date.now(),
+        resolved_at_ms: null,
+      },
+    };
+    vi.mocked(getSupervisorSnapshot).mockResolvedValueOnce(snapshotWithApproval);
+
+    const onApprovalDecision = vi.fn().mockResolvedValue(undefined);
+    render(
+      <SupervisorHome
+        {...supervisorHomeProps}
+        approvals={[
+          {
+            workspace_id: "ws-1",
+            request_id: "42",
+            method: "codex/requestApproval/exec_command",
+            params: { command: ["npm", "run", "verify"] },
+          },
+        ]}
+        onApprovalDecision={onApprovalDecision}
+      />,
+    );
+
+    expect(await screen.findByText("Action center")).toBeTruthy();
+    expect(screen.getByText("npm run verify")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => {
+      expect(onApprovalDecision).toHaveBeenCalledWith(
+        {
+          workspace_id: "ws-1",
+          request_id: "42",
+          method: "codex/requestApproval/exec_command",
+          params: { command: ["npm", "run", "verify"] },
+        },
+        "accept",
+      );
+    });
   });
 });

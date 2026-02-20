@@ -1,10 +1,21 @@
+import { useCallback, useMemo, useState } from "react";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
-import type { DictationSessionState, DictationTranscript } from "@/types";
+import type {
+  ApprovalRequest,
+  DictationSessionState,
+  DictationTranscript,
+} from "@/types";
+import { getApprovalCommandInfo } from "@/utils/approvalRules";
 import { formatRelativeTime } from "../../../utils/time";
 import { useSupervisorOperations } from "../hooks/useSupervisorOperations";
 import { SupervisorChat } from "./SupervisorChat";
 
 type SupervisorHomeProps = {
+  approvals: ApprovalRequest[];
+  onApprovalDecision: (
+    request: ApprovalRequest,
+    decision: "accept" | "decline",
+  ) => void | Promise<void>;
   dictationEnabled: boolean;
   dictationState: DictationSessionState;
   dictationLevel: number;
@@ -34,7 +45,86 @@ function normalizeJobStatusClass(status: string) {
   return status === "pending" ? "queued" : status;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function formatApprovalMethod(value: string) {
+  const trimmed = value.replace(/^codex\/requestApproval\/?/, "");
+  return trimmed || value;
+}
+
+function formatSummaryValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "none";
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "empty";
+    }
+    return trimmed.length > 72 ? `${trimmed.slice(0, 69)}...` : trimmed;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const rendered = value
+      .slice(0, 3)
+      .map((entry) => formatSummaryValue(entry))
+      .join(", ");
+    return value.length > 3 ? `${rendered}, ...` : rendered;
+  }
+  return "structured payload";
+}
+
+function formatApprovalParamsSummary(params: Record<string, unknown>): string | null {
+  const ignoredKeys = new Set([
+    "threadId",
+    "thread_id",
+    "turnId",
+    "turn_id",
+    "itemId",
+    "item_id",
+    "requestId",
+    "request_id",
+  ]);
+
+  const summary = Object.entries(params)
+    .filter(([key]) => !ignoredKeys.has(key))
+    .slice(0, 3)
+    .map(([key, value]) => `${key}: ${formatSummaryValue(value)}`)
+    .join(" · ");
+
+  return summary || null;
+}
+
+function extractSignalRequestKey(signalId: string, context: unknown): string | null {
+  if (signalId.startsWith("approval:")) {
+    const requestKey = signalId.slice("approval:".length).trim();
+    if (requestKey) {
+      return requestKey;
+    }
+  }
+
+  const contextRecord = asRecord(context);
+  const contextRequestKey = contextRecord?.requestKey;
+  if (typeof contextRequestKey === "string") {
+    const trimmed = contextRequestKey.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  return null;
+}
+
 export function SupervisorHome({
+  approvals,
+  onApprovalDecision,
   dictationEnabled,
   dictationState,
   dictationLevel,
@@ -57,6 +147,7 @@ export function SupervisorHome({
     feedTotal,
     openQuestionsCount,
     pendingApprovalsCount,
+    pendingApprovals,
     activityNeedsInputCount,
     needsInputOnly,
     setNeedsInputOnly,
@@ -68,6 +159,47 @@ export function SupervisorHome({
     refresh,
     acknowledgeSignal,
   } = useSupervisorOperations();
+  const [decidingApprovalKey, setDecidingApprovalKey] = useState<string | null>(null);
+
+  const workspacesById = useMemo(
+    () => new Map(workspaceList.map((workspace) => [workspace.id, workspace.name])),
+    [workspaceList],
+  );
+  const approvalRequestsByKey = useMemo(() => {
+    const map = new Map<string, ApprovalRequest>();
+    for (const approval of approvals) {
+      map.set(`${approval.workspace_id}:${String(approval.request_id)}`, approval);
+    }
+    return map;
+  }, [approvals]);
+  const pendingApprovalsByKey = useMemo(() => {
+    const map = new Map<string, (typeof pendingApprovals)[number]>();
+    for (const approval of pendingApprovals) {
+      map.set(approval.request_key, approval);
+    }
+    return map;
+  }, [pendingApprovals]);
+  const handleSignalApprovalDecision = useCallback(
+    async (request: ApprovalRequest, decision: "accept" | "decline") => {
+      const approvalKey = `${request.workspace_id}:${String(request.request_id)}`;
+      setDecidingApprovalKey(approvalKey);
+      try {
+        await Promise.resolve(onApprovalDecision(request, decision));
+      } finally {
+        setDecidingApprovalKey((current) => (current === approvalKey ? null : current));
+      }
+    },
+    [onApprovalDecision],
+  );
+  const formatSignalLocation = useCallback(
+    (workspaceId: string | null, threadId: string | null) => {
+      const workspaceLabel = workspaceId
+        ? workspacesById.get(workspaceId) ?? workspaceId
+        : "global";
+      return threadId ? `${workspaceLabel} · ${threadId}` : workspaceLabel;
+    },
+    [workspacesById],
+  );
 
   return (
     <div className="supervisor-home">
@@ -128,6 +260,113 @@ export function SupervisorHome({
       {isLoading && workspaceList.length === 0 ? (
         <div className="supervisor-home-empty">Loading supervisor snapshot...</div>
       ) : null}
+
+      <section className="supervisor-section supervisor-section-priority">
+        <div className="supervisor-section-header">
+          <h2>Action center</h2>
+          <span>{pendingSignals.length} pending</span>
+        </div>
+        {pendingSignals.length === 0 ? (
+          <p className="supervisor-home-empty">No actions waiting for your input.</p>
+        ) : (
+          <ul className="supervisor-signal-list supervisor-signal-list-priority">
+            {pendingSignals.map((signal) => {
+              const requestKey =
+                signal.kind === "needs_approval"
+                  ? extractSignalRequestKey(signal.id, signal.context)
+                  : null;
+              const request = requestKey ? approvalRequestsByKey.get(requestKey) ?? null : null;
+              const pendingApproval = requestKey
+                ? pendingApprovalsByKey.get(requestKey) ?? null
+                : null;
+              const params = request?.params ?? asRecord(pendingApproval?.params) ?? {};
+              const commandInfo = getApprovalCommandInfo(params);
+              const approvalMethod = request?.method ?? pendingApproval?.method ?? null;
+              const approvalSummary = formatApprovalParamsSummary(params);
+              const locationWorkspaceId = signal.workspace_id ?? pendingApproval?.workspace_id ?? null;
+              const locationThreadId = signal.thread_id ?? pendingApproval?.thread_id ?? null;
+              const approvalKey = request
+                ? `${request.workspace_id}:${String(request.request_id)}`
+                : null;
+              const isApprovalActionBusy =
+                approvalKey !== null && decidingApprovalKey === approvalKey;
+
+              return (
+                <li key={signal.id} className="supervisor-signal-item">
+                  <div className="supervisor-signal-main">
+                    <span className={`supervisor-signal-kind is-${signal.kind}`}>
+                      {signal.kind}
+                    </span>
+                    <span className="supervisor-signal-message">{signal.message}</span>
+                  </div>
+
+                  {signal.kind === "needs_approval" ? (
+                    <div className="supervisor-signal-approval">
+                      {approvalMethod ? (
+                        <div className="supervisor-signal-approval-method">
+                          Method: {formatApprovalMethod(approvalMethod)}
+                        </div>
+                      ) : null}
+                      {commandInfo ? (
+                        <code className="supervisor-signal-command">{commandInfo.preview}</code>
+                      ) : approvalSummary ? (
+                        <div className="supervisor-signal-approval-summary">{approvalSummary}</div>
+                      ) : (
+                        <div className="supervisor-signal-approval-summary">
+                          No additional approval details.
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  <div className="supervisor-signal-meta">
+                    <span>
+                      {formatSignalLocation(locationWorkspaceId, locationThreadId)} ·{" "}
+                      {formatSupervisorTime(signal.created_at_ms)}
+                    </span>
+
+                    {signal.kind === "needs_approval" && request ? (
+                      <div className="supervisor-signal-actions">
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => {
+                            void handleSignalApprovalDecision(request, "decline");
+                          }}
+                          disabled={isApprovalActionBusy}
+                        >
+                          Decline
+                        </button>
+                        <button
+                          type="button"
+                          className="primary"
+                          onClick={() => {
+                            void handleSignalApprovalDecision(request, "accept");
+                          }}
+                          disabled={isApprovalActionBusy}
+                        >
+                          Approve
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="supervisor-signal-ack"
+                        onClick={() => {
+                          void acknowledgeSignal(signal);
+                        }}
+                        disabled={ackingSignalId === signal.id}
+                      >
+                        Acknowledge
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       <SupervisorChat
         dictationEnabled={dictationEnabled}
@@ -337,8 +576,8 @@ export function SupervisorHome({
 
         <section className="supervisor-section">
           <div className="supervisor-section-header">
-            <h2>Signals</h2>
-            <span>{pendingSignals.length} pending</span>
+            <h2>Recent signals</h2>
+            <span>{signalList.length} total</span>
           </div>
           {signalList.length === 0 ? (
             <p className="supervisor-home-empty">No supervisor signals.</p>
@@ -355,21 +594,19 @@ export function SupervisorHome({
                       <span className="supervisor-signal-message">{signal.message}</span>
                     </div>
                     <div className="supervisor-signal-meta">
-                      <span>{formatSupervisorTime(signal.created_at_ms)}</span>
-                      {isPending ? (
-                        <button
-                          type="button"
-                          className="supervisor-signal-ack"
-                          onClick={() => {
-                            void acknowledgeSignal(signal);
-                          }}
-                          disabled={ackingSignalId === signal.id}
-                        >
-                          Acknowledge
-                        </button>
-                      ) : (
-                        <span className="supervisor-signal-acked">Acknowledged</span>
-                      )}
+                      <span>
+                        {formatSignalLocation(signal.workspace_id, signal.thread_id)} ·{" "}
+                        {formatSupervisorTime(signal.created_at_ms)}
+                      </span>
+                      <span
+                        className={
+                          isPending
+                            ? "supervisor-signal-pending"
+                            : "supervisor-signal-acked"
+                        }
+                      >
+                        {isPending ? "Pending" : "Acknowledged"}
+                      </span>
                     </div>
                   </li>
                 );
